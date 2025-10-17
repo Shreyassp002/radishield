@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./interfaces/IRadiShield.sol";
+
+/**
+ * @title RadiShield
+ * @dev Parametric crop insurance contract using Chainlink oracles for weather data
+ */
+contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
+    // Custom Errors for better error handling
+    error InsufficientPremium(uint256 required, uint256 provided);
+    error PolicyNotFound(uint256 policyId);
+    error PolicyNotActive(uint256 policyId);
+    error PolicyAlreadyClaimed(uint256 policyId);
+    error InvalidLocation(int256 lat, int256 lon);
+    error InsufficientContractBalance(uint256 required, uint256 available);
+
+    error InvalidCoverage(uint256 coverage);
+    error InvalidDuration(uint256 duration);
+    error PolicyExpired(uint256 policyId);
+    error TransferFailed();
+
+    // State variables for contract configuration
+    IERC20 public immutable usdcToken;
+
+    // Policy management
+    uint256 private nextPolicyId = 1;
+    mapping(uint256 => Policy) public policies;
+    mapping(address => uint256[]) public farmerPolicies;
+
+    mapping(uint256 => WeatherData) private policyWeatherData;
+
+    // Constants
+    uint256 public constant BASE_PREMIUM_RATE = 700; // 7% in basis points (7% = 700/10000)
+
+    uint256 public constant DROUGHT_THRESHOLD = 50; // mm in 30 days
+    uint256 public constant FLOOD_THRESHOLD = 100; // mm in 24 hours
+    uint256 public constant HEATWAVE_THRESHOLD = 38; // Celsius
+    uint256 public constant HEATWAVE_PAYOUT_RATE = 75; // 75% payout
+    uint256 public constant MIN_COVERAGE = 100 * 10 ** 6; // $100 USDC minimum
+    uint256 public constant MAX_COVERAGE = 10000 * 10 ** 6; // $10,000 USDC maximum
+    uint256 public constant MIN_DURATION = 30 days; // Minimum 30 days
+    uint256 public constant MAX_DURATION = 365 days; // Maximum 1 year
+
+    // Additional events for comprehensive logging
+    event PremiumCalculated(uint256 coverage, int256 lat, int256 lon, uint256 premium);
+    event WeatherDataReceived(
+        uint256 indexed policyId,
+        uint256 rainfall30d,
+        uint256 rainfall24h,
+        uint256 temperature
+    );
+    event PayoutTriggered(uint256 indexed policyId, string triggerType, uint256 payoutAmount);
+
+    /**
+     * @dev Constructor initializes the contract with required addresses and parameters
+     * @param _usdcToken Address of the USDC token contract
+     */
+    constructor(address _usdcToken) Ownable(msg.sender) {
+        require(_usdcToken != address(0), "Invalid USDC token address");
+
+        usdcToken = IERC20(_usdcToken);
+        // Oracle configuration will be added in subsequent tasks
+    }
+
+    // Implementation functions will be added in subsequent tasks
+    // This file establishes the core structure and data definitions
+
+    /**
+     * @dev Create a new insurance policy (stub implementation)
+     */
+    function createPolicy(
+        string memory cropType,
+        uint256 coverage,
+        uint256 duration,
+        int256 latitude,
+        int256 longitude
+    ) external override returns (uint256) {
+        // Implementation will be added in subsequent tasks
+        revert("Not implemented yet");
+    }
+
+    /**
+     * @dev Calculate premium for a policy (stub implementation)
+     */
+    function calculatePremium(
+        uint256 coverage,
+        int256 latitude,
+        int256 longitude
+    ) external view override returns (uint256) {
+        // Implementation will be added in subsequent tasks
+        return (coverage * BASE_PREMIUM_RATE) / 10000;
+    }
+
+    /**
+     * @dev Get policy details (stub implementation)
+     */
+    function getPolicy(uint256 policyId) external view override returns (Policy memory) {
+        return policies[policyId];
+    }
+
+    /**
+     * @dev Get all policies for a farmer (stub implementation)
+     */
+    function getPoliciesByFarmer(address farmer) external view override returns (uint256[] memory) {
+        return farmerPolicies[farmer];
+    }
+}

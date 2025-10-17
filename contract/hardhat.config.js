@@ -4,14 +4,14 @@ require("hardhat-deploy")
 require("solidity-coverage")
 require("hardhat-gas-reporter")
 require("hardhat-contract-sizer")
+require("@nomicfoundation/hardhat-verify")
 require("dotenv").config()
 
 const { networkConfig } = require("./helper-hardhat-config")
 
 const POLYGON_AMOY_RPC_URL = process.env.POLYGON_AMOY_RPC_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY
-const POLYGONSCAN_API_KEY = process.env.POLYGONSCAN_API_KEY
-
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY
 
 module.exports = {
     solidity: {
@@ -40,7 +40,7 @@ module.exports = {
         },
         polygonAmoy: {
             url: POLYGON_AMOY_RPC_URL,
-            accounts: [PRIVATE_KEY],
+            accounts: [PRIVATE_KEY], 
             chainId: 80002,
             blockConfirmations: 6,
         },
@@ -52,14 +52,14 @@ module.exports = {
         enabled: true,
     },
     gasReporter: {
-        enabled: process.env.REPORT_GAS !== undefined,
+        enabled: true,
         outputFile: "gas-report.txt",
         noColors: true,
         currency: "USD",
     },
     etherscan: {
         apiKey: {
-            polygonAmoy: POLYGONSCAN_API_KEY,
+            polygonAmoy: ETHERSCAN_API_KEY,
         },
         customChains: [
             {

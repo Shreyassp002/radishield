@@ -135,5 +135,5 @@ Cargo.lock
 # Archive files
 *.zip
 *.tar.gz
-*.rar
+*.rarhey
 .kiro
