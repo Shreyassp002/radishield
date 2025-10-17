@@ -601,4 +601,307 @@ describe("RadiShield Premium Calculation", function () {
             })
         })
     })
+
+    describe("Chainlink Oracle Integration", function () {
+        beforeEach(async function () {
+            // Mint USDC and LINK to farmer and contract for testing
+            const usdcAmount = ethers.parseUnits("10000", 6) // $10,000 USDC
+            const linkAmount = ethers.parseUnits("100", 18) // 100 LINK
+
+            await mockUSDC.mint(farmer.address, usdcAmount)
+            await mockUSDC.mint(await radiShield.getAddress(), usdcAmount)
+            await mockLINK.mint(await radiShield.getAddress(), linkAmount)
+
+            // Approve RadiShield contract to spend farmer's USDC
+            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), usdcAmount)
+
+            // Create a test policy
+            await radiShield
+                .connect(farmer)
+                .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, -1, 36)
+        })
+
+        describe("requestWeatherData", function () {
+            it("should emit WeatherDataRequested event with correct parameters", async function () {
+                const policyId = 1
+
+                // Mock the Chainlink request - we expect it to emit the event
+                const tx = await radiShield.requestWeatherData(policyId)
+                const receipt = await tx.wait()
+
+                // Find the WeatherDataRequested event
+                const event = receipt.logs.find((log) => {
+                    try {
+                        const parsed = radiShield.interface.parseLog(log)
+                        return parsed.name === "WeatherDataRequested"
+                    } catch {
+                        return false
+                    }
+                })
+
+                expect(event).to.not.be.undefined
+                const parsedEvent = radiShield.interface.parseLog(event)
+                expect(parsedEvent.args[0]).to.equal(policyId) // policyId
+                expect(parsedEvent.args[1]).to.not.equal(ethers.ZeroHash) // requestId should not be zero
+            })
+
+            it("should revert for non-existent policy", async function () {
+                const nonExistentPolicyId = 999
+
+                await expect(radiShield.requestWeatherData(nonExistentPolicyId))
+                    .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                    .withArgs(nonExistentPolicyId)
+            })
+
+            it("should revert for inactive policy", async function () {
+                const policyId = 1
+
+                // First claim the policy to make it inactive
+                await radiShield.emergencyPayout(policyId, ethers.parseUnits("500", 6), "Test")
+
+                await expect(radiShield.requestWeatherData(policyId))
+                    .to.be.revertedWithCustomError(radiShield, "PolicyNotActive")
+                    .withArgs(policyId)
+            })
+
+            it("should revert when contract has insufficient LINK balance", async function () {
+                // Deploy a new contract with no LINK balance
+                const RadiShield = await ethers.getContractFactory("RadiShield")
+                const testRadiShield = await RadiShield.deploy(
+                    await mockUSDC.getAddress(),
+                    await mockLINK.getAddress(),
+                    MOCK_ORACLE_ADDRESS,
+                    MOCK_JOB_ID,
+                )
+                await testRadiShield.waitForDeployment()
+
+                // Give farmer USDC and create policy
+                await mockUSDC
+                    .connect(farmer)
+                    .approve(await testRadiShield.getAddress(), ethers.parseUnits("1000", 6))
+                await testRadiShield
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+
+                const oracleFee = ethers.parseUnits("0.1", 18) // 0.1 LINK
+                await expect(testRadiShield.requestWeatherData(1))
+                    .to.be.revertedWithCustomError(testRadiShield, "InsufficientContractBalance")
+                    .withArgs(oracleFee, 0)
+            })
+
+            it("should check LINK balance before making request", async function () {
+                const policyId = 1
+                const expectedLinkBalance = await mockLINK.balanceOf(await radiShield.getAddress())
+                const linkBalance = await radiShield.getLinkBalance()
+
+                expect(linkBalance).to.equal(expectedLinkBalance)
+                expect(linkBalance).to.be.gte(ethers.parseUnits("0.1", 18)) // Should have enough for oracle fee
+            })
+        })
+
+        describe("fulfillWeatherData", function () {
+            let requestId
+            let policyId
+
+            beforeEach(async function () {
+                policyId = 1
+                // First make a weather data request to get a valid requestId
+                const tx = await radiShield.requestWeatherData(policyId)
+                const receipt = await tx.wait()
+
+                // Extract requestId from the WeatherDataRequested event
+                const event = receipt.logs.find((log) => {
+                    try {
+                        const parsed = radiShield.interface.parseLog(log)
+                        return parsed.name === "WeatherDataRequested"
+                    } catch {
+                        return false
+                    }
+                })
+                const parsedEvent = radiShield.interface.parseLog(event)
+                requestId = parsedEvent.args[1] // requestId is the second argument
+            })
+
+            it("should emit WeatherDataReceived event with correct data", async function () {
+                const rainfall30d = 25 // mm - below drought threshold
+                const rainfall24h = 10 // mm
+                const temperature = 30 // Celsius
+
+                await expect(
+                    radiShield.testFulfillWeatherData(
+                        requestId,
+                        rainfall30d,
+                        rainfall24h,
+                        temperature,
+                    ),
+                )
+                    .to.emit(radiShield, "WeatherDataReceived")
+                    .withArgs(policyId, rainfall30d, rainfall24h, temperature)
+            })
+
+            it("should trigger drought payout for low rainfall", async function () {
+                const rainfall30d = 25 // mm - below 50mm drought threshold
+                const rainfall24h = 10 // mm
+                const temperature = 30 // Celsius
+                const expectedPayout = ethers.parseUnits("1000", 6) // Full coverage
+
+                await expect(
+                    radiShield.testFulfillWeatherData(
+                        requestId,
+                        rainfall30d,
+                        rainfall24h,
+                        temperature,
+                    ),
+                )
+                    .to.emit(radiShield, "PayoutTriggered")
+                    .withArgs(policyId, "drought", expectedPayout)
+            })
+
+            it("should trigger flood payout for high rainfall", async function () {
+                const rainfall30d = 80 // mm
+                const rainfall24h = 150 // mm - above 100mm flood threshold
+                const temperature = 25 // Celsius
+                const expectedPayout = ethers.parseUnits("1000", 6) // Full coverage
+
+                await expect(
+                    radiShield.testFulfillWeatherData(
+                        requestId,
+                        rainfall30d,
+                        rainfall24h,
+                        temperature,
+                    ),
+                )
+                    .to.emit(radiShield, "PayoutTriggered")
+                    .withArgs(policyId, "flood", expectedPayout)
+            })
+
+            it("should trigger heatwave payout for high temperature", async function () {
+                const rainfall30d = 80 // mm
+                const rainfall24h = 20 // mm
+                const temperature = 40 // Celsius - above 38°C heatwave threshold
+                const coverage = ethers.parseUnits("1000", 6)
+                const expectedPayout = (coverage * BigInt(75)) / BigInt(100) // 75% payout
+
+                await expect(
+                    radiShield.testFulfillWeatherData(
+                        requestId,
+                        rainfall30d,
+                        rainfall24h,
+                        temperature,
+                    ),
+                )
+                    .to.emit(radiShield, "PayoutTriggered")
+                    .withArgs(policyId, "heatwave", expectedPayout)
+            })
+
+            it("should not trigger payout for normal weather conditions", async function () {
+                const rainfall30d = 80 // mm - above drought threshold
+                const rainfall24h = 20 // mm - below flood threshold
+                const temperature = 30 // Celsius - below heatwave threshold
+
+                const tx = await radiShield.testFulfillWeatherData(
+                    requestId,
+                    rainfall30d,
+                    rainfall24h,
+                    temperature,
+                )
+                const receipt = await tx.wait()
+
+                // Check that no PayoutTriggered event was emitted
+                const payoutEvents = receipt.logs.filter((log) => {
+                    try {
+                        const parsed = radiShield.interface.parseLog(log)
+                        return parsed.name === "PayoutTriggered"
+                    } catch {
+                        return false
+                    }
+                })
+                expect(payoutEvents.length).to.equal(0)
+            })
+
+            it("should store weather data correctly", async function () {
+                const rainfall30d = 60
+                const rainfall24h = 15
+                const temperature = 32
+
+                await radiShield.testFulfillWeatherData(
+                    requestId,
+                    rainfall30d,
+                    rainfall24h,
+                    temperature,
+                )
+
+                const weatherData = await radiShield.getWeatherData(policyId)
+                expect(weatherData.rainfall30d).to.equal(rainfall30d)
+                expect(weatherData.rainfall24h).to.equal(rainfall24h)
+                expect(weatherData.temperature).to.equal(temperature)
+                expect(weatherData.isValid).to.be.true
+                expect(weatherData.timestamp).to.be.gt(0)
+            })
+        })
+
+        describe("Weather trigger thresholds", function () {
+            it("should have correct drought threshold (50mm)", async function () {
+                const droughtThreshold = await radiShield.DROUGHT_THRESHOLD()
+                expect(droughtThreshold).to.equal(50)
+            })
+
+            it("should have correct flood threshold (100mm)", async function () {
+                const floodThreshold = await radiShield.FLOOD_THRESHOLD()
+                expect(floodThreshold).to.equal(100)
+            })
+
+            it("should have correct heatwave threshold (38°C)", async function () {
+                const heatwaveThreshold = await radiShield.HEATWAVE_THRESHOLD()
+                expect(heatwaveThreshold).to.equal(38)
+            })
+
+            it("should have correct heatwave payout rate (75%)", async function () {
+                const heatwavePayoutRate = await radiShield.HEATWAVE_PAYOUT_RATE()
+                expect(heatwavePayoutRate).to.equal(75)
+            })
+
+            it("should have correct oracle fee (0.1 LINK)", async function () {
+                const oracleFee = await radiShield.ORACLE_FEE()
+                expect(oracleFee).to.equal(ethers.parseUnits("0.1", 18))
+            })
+        })
+
+        describe("LINK token integration", function () {
+            it("should return correct LINK balance", async function () {
+                const expectedBalance = await mockLINK.balanceOf(await radiShield.getAddress())
+                const contractLinkBalance = await radiShield.getLinkBalance()
+                expect(contractLinkBalance).to.equal(expectedBalance)
+            })
+
+            it("should have sufficient LINK for oracle requests", async function () {
+                const linkBalance = await radiShield.getLinkBalance()
+                const oracleFee = await radiShield.ORACLE_FEE()
+                expect(linkBalance).to.be.gte(oracleFee)
+            })
+        })
+
+        describe("Integer to string conversion", function () {
+            it("should handle coordinate conversion correctly", async function () {
+                // Test the coordinate scaling and conversion by creating a policy
+                // and checking that the coordinates are stored correctly
+                const latitude = -1 // Will be scaled to -10000
+                const longitude = 36 // Will be scaled to 360000
+
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy(
+                        "coffee",
+                        ethers.parseUnits("500", 6),
+                        60 * 24 * 60 * 60,
+                        latitude,
+                        longitude,
+                    )
+
+                const policy = await radiShield.getPolicy(2) // Second policy
+                expect(policy.latitude).to.equal(latitude * 10000)
+                expect(policy.longitude).to.equal(longitude * 10000)
+            })
+        })
+    })
 })

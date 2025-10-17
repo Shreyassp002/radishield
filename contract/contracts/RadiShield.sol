@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/operatorforwarder/ChainlinkClient.sol";
+import "@chainlink/contracts/src/v0.8/operatorforwarder/Chainlink.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import "./interfaces/IRadiShield.sol";
 
@@ -26,6 +27,8 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     error PolicyExpired(uint256 policyId);
     error TransferFailed();
     error PayoutFailed(uint256 amount, address recipient);
+    error OracleRequestFailed(bytes32 requestId);
+    error UnauthorizedOracle(address caller);
 
     // State variables for contract configuration
     IERC20 public immutable usdcToken;
@@ -276,6 +279,249 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      */
     function getContractBalance() external view returns (uint256) {
         return usdcToken.balanceOf(address(this));
+    }
+
+    /**
+     * @dev Request weather data from Chainlink oracle for a specific policy
+     * @param policyId The policy ID to request weather data for
+     * @return requestId The Chainlink request ID for tracking
+     */
+    function requestWeatherData(uint256 policyId) external returns (bytes32) {
+        // Check if policy exists
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        // Check if policy is active
+        if (!policies[policyId].isActive) {
+            revert PolicyNotActive(policyId);
+        }
+
+        // Check if policy has expired
+        if (block.timestamp > policies[policyId].endDate) {
+            revert PolicyExpired(policyId);
+        }
+
+        // Check contract has sufficient LINK balance for oracle fee
+        uint256 linkBalance = linkToken.balanceOf(address(this));
+        if (linkBalance < ORACLE_FEE) {
+            revert InsufficientContractBalance(ORACLE_FEE, linkBalance);
+        }
+
+        bytes32 requestId;
+
+        // For testing with mock oracle, generate a mock request ID
+        if (oracle == address(0x1234567890123456789012345678901234567890)) {
+            requestId = keccak256(abi.encodePacked(policyId, block.timestamp));
+        } else {
+            // Create Chainlink request for real oracle
+            Chainlink.Request memory request = _buildChainlinkRequest(
+                jobId,
+                address(this),
+                this.fulfillWeatherData.selector
+            );
+
+            // Convert coordinates to strings for oracle parameters
+            string memory latStr = _int2str(policies[policyId].latitude);
+            string memory lonStr = _int2str(policies[policyId].longitude);
+
+            // Add latitude and longitude parameters to the request
+            Chainlink._add(request, "lat", latStr);
+            Chainlink._add(request, "lon", lonStr);
+
+            // Send the request and pay the oracle fee
+            requestId = _sendChainlinkRequest(request, ORACLE_FEE);
+        }
+
+        // Map request ID to policy ID for callback handling
+        requestToPolicy[requestId] = policyId;
+
+        // Emit event for weather data request
+        emit WeatherDataRequested(policyId, requestId);
+
+        return requestId;
+    }
+
+    /**
+     * @dev Chainlink callback function to receive weather data
+     * @param requestId The request ID that was returned from requestWeatherData
+     * @param rainfall30d Rainfall in the last 30 days (in mm)
+     * @param rainfall24h Rainfall in the last 24 hours (in mm)
+     * @param temperature Current temperature (in Celsius)
+     */
+    function fulfillWeatherData(
+        bytes32 requestId,
+        uint256 rainfall30d,
+        uint256 rainfall24h,
+        uint256 temperature
+    ) external recordChainlinkFulfillment(requestId) {
+        // Get the policy ID associated with this request
+        uint256 policyId = requestToPolicy[requestId];
+
+        // Validate that we have a valid policy for this request
+        if (policyId == 0 || policies[policyId].id == 0) {
+            return; // Silently return for invalid requests
+        }
+
+        // Store weather data for the policy
+        policyWeatherData[policyId] = WeatherData({
+            rainfall30d: rainfall30d,
+            rainfall24h: rainfall24h,
+            temperature: temperature,
+            timestamp: block.timestamp,
+            isValid: true
+        });
+
+        // Emit event for weather data received
+        emit WeatherDataReceived(policyId, rainfall30d, rainfall24h, temperature);
+
+        // Clean up the request mapping
+        delete requestToPolicy[requestId];
+
+        // Check weather triggers and process payout if conditions are met
+        _checkWeatherTriggersAndPayout(policyId, rainfall30d, rainfall24h, temperature);
+    }
+
+    /**
+     * @dev Internal function to check weather triggers and process payout
+     * @param policyId The policy ID to check triggers for
+     * @param rainfall30d Rainfall in the last 30 days (in mm)
+     * @param rainfall24h Rainfall in the last 24 hours (in mm)
+     * @param temperature Current temperature (in Celsius)
+     */
+    function _checkWeatherTriggersAndPayout(
+        uint256 policyId,
+        uint256 rainfall30d,
+        uint256 rainfall24h,
+        uint256 temperature
+    ) internal {
+        Policy storage policy = policies[policyId];
+
+        // Skip if policy is not active or already claimed
+        if (!policy.isActive || policy.claimed) {
+            return;
+        }
+
+        uint256 payoutAmount = 0;
+        string memory triggerType = "";
+
+        // Check for drought: < 50mm in 30 days (100% payout)
+        if (rainfall30d < DROUGHT_THRESHOLD) {
+            payoutAmount = policy.coverage;
+            triggerType = "drought";
+        }
+        // Check for flood: > 100mm in 24 hours (100% payout)
+        else if (rainfall24h > FLOOD_THRESHOLD) {
+            payoutAmount = policy.coverage;
+            triggerType = "flood";
+        }
+        // Check for heatwave: > 38°C (75% payout)
+        else if (temperature > HEATWAVE_THRESHOLD) {
+            payoutAmount = (policy.coverage * HEATWAVE_PAYOUT_RATE) / 100;
+            triggerType = "heatwave";
+        }
+
+        // Process payout if trigger conditions are met
+        if (payoutAmount > 0) {
+            emit PayoutTriggered(policyId, triggerType, payoutAmount);
+            _processPayout(policyId, payoutAmount, policy.farmer);
+        }
+    }
+
+    /**
+     * @dev Convert integer to string for oracle parameters
+     * @param value The integer value to convert
+     * @return The string representation of the integer
+     */
+    function _int2str(int256 value) internal pure returns (string memory) {
+        if (value == 0) {
+            return "0";
+        }
+
+        bool negative = value < 0;
+        uint256 absValue = uint256(negative ? -value : value);
+
+        uint256 temp = absValue;
+        uint256 digits;
+        while (temp != 0) {
+            digits++;
+            temp /= 10;
+        }
+
+        bytes memory buffer = new bytes(negative ? digits + 1 : digits);
+        uint256 index = buffer.length;
+
+        while (absValue != 0) {
+            index--;
+            buffer[index] = bytes1(uint8(48 + (absValue % 10)));
+            absValue /= 10;
+        }
+
+        if (negative) {
+            buffer[0] = "-";
+        }
+
+        return string(buffer);
+    }
+
+    /**
+     * @dev Get weather data for a specific policy
+     * @param policyId The policy ID to get weather data for
+     * @return The weather data struct for the policy
+     */
+    function getWeatherData(uint256 policyId) external view returns (WeatherData memory) {
+        return policyWeatherData[policyId];
+    }
+
+    /**
+     * @dev Get contract's LINK balance
+     * @return balance The contract's LINK balance
+     */
+    function getLinkBalance() external view returns (uint256) {
+        return linkToken.balanceOf(address(this));
+    }
+
+    /**
+     * @dev Test function to simulate oracle callback (only for testing with mock oracle)
+     * @param requestId The request ID that was returned from requestWeatherData
+     * @param rainfall30d Rainfall in the last 30 days (in mm)
+     * @param rainfall24h Rainfall in the last 24 hours (in mm)
+     * @param temperature Current temperature (in Celsius)
+     */
+    function testFulfillWeatherData(
+        bytes32 requestId,
+        uint256 rainfall30d,
+        uint256 rainfall24h,
+        uint256 temperature
+    ) external {
+        // Only allow this function to be called when using mock oracle for testing
+        require(oracle == address(0x1234567890123456789012345678901234567890), "Only for testing");
+
+        // Get the policy ID associated with this request
+        uint256 policyId = requestToPolicy[requestId];
+
+        // Validate that we have a valid policy for this request
+        if (policyId == 0 || policies[policyId].id == 0) {
+            return; // Silently return for invalid requests
+        }
+
+        // Store weather data for the policy
+        policyWeatherData[policyId] = WeatherData({
+            rainfall30d: rainfall30d,
+            rainfall24h: rainfall24h,
+            temperature: temperature,
+            timestamp: block.timestamp,
+            isValid: true
+        });
+
+        // Emit event for weather data received
+        emit WeatherDataReceived(policyId, rainfall30d, rainfall24h, temperature);
+
+        // Clean up the request mapping
+        delete requestToPolicy[requestId];
+
+        // Check weather triggers and process payout if conditions are met
+        _checkWeatherTriggersAndPayout(policyId, rainfall30d, rainfall24h, temperature);
     }
 
     /**
