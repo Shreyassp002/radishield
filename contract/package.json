@@ -1,0 +1,32 @@
+{
+    "name": "radishield-contracts",
+    "version": "1.0.0",
+    "scripts": {
+        "compile": "hardhat compile",
+        "test": "hardhat test",
+        "deploy": "hardhat deploy",
+        "size": "hardhat size-contracts",
+        "coverage": "hardhat coverage",
+        "lint": "solhint 'contracts/**/*.sol'",
+        "format": "prettier --write ."
+    },
+    "devDependencies": {
+        "@chainlink/contracts": "^1.4.0",
+        "@nomicfoundation/hardhat-chai-matchers": "^2.0.9",
+        "@nomicfoundation/hardhat-ethers": "^3.0.2",
+        "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
+        "@openzeppelin/contracts": "^5.4.0",
+        "chai": "^4.3.10",
+        "dotenv": "^17.1.0",
+        "ethers": "^6.15.0",
+        "hardhat": "^2.25.0",
+        "hardhat-contract-sizer": "^2.10.0",
+        "hardhat-deploy": "^0.12.4",
+        "hardhat-gas-reporter": "^2.3.0",
+        "hardhat-verify": "^1.0.0",
+        "prettier": "^3.6.2",
+        "prettier-plugin-solidity": "^2.0.0",
+        "solhint": "^6.0.0",
+        "solidity-coverage": "^0.8.16"
+    }
+}

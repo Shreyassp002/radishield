@@ -1,0 +1,139 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Hardhat files (contract directory)
+contract/cache/
+contract/artifacts/
+contract/typechain/
+contract/typechain-types/
+contract/coverage/
+contract/coverage.json
+contract/.nyc_output/
+contract/gas-report.txt
+contract/ignition/deployments/chain-31337/
+
+# Frontend build files (if added later)
+frontend/build/
+frontend/dist/
+frontend/.next/
+frontend/out/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+lerna-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Temporary folders
+tmp/
+temp/
+
+# Solidity compiler output
+contracts/flattened/
+**/flattened/
+
+# Deployment artifacts (keep local deployments private)
+**/deployments/localhost/
+**/deployments/hardhat/
+
+# Private keys and sensitive data
+private-keys.txt
+mnemonic.txt
+*.key
+*.pem
+secrets/
+
+# Test artifacts
+test-results/
+junit.xml
+coverage/
+
+# Documentation build
+docs/build/
+docs/_build/
+
+# Python (if used for scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Rust (if used for any tooling)
+target/
+Cargo.lock
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+.kiro
