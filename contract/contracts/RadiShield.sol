@@ -25,6 +25,7 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     error InvalidDuration(uint256 duration);
     error PolicyExpired(uint256 policyId);
     error TransferFailed();
+    error PayoutFailed(uint256 amount, address recipient);
 
     // State variables for contract configuration
     IERC20 public immutable usdcToken;
@@ -221,5 +222,105 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      */
     function getPoliciesByFarmer(address farmer) external view override returns (uint256[] memory) {
         return farmerPolicies[farmer];
+    }
+
+    /**
+     * @dev Internal function to process payout to farmer
+     * @param policyId The policy ID for which payout is being processed
+     * @param amount The payout amount in USDC (6 decimals)
+     * @param recipient The address to receive the payout
+     */
+    function _processPayout(
+        uint256 policyId,
+        uint256 amount,
+        address recipient
+    ) internal nonReentrant {
+        // Check if policy exists
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        // Check if policy has already been claimed (check this first)
+        if (policies[policyId].claimed) {
+            revert PolicyAlreadyClaimed(policyId);
+        }
+
+        // Check if policy is active
+        if (!policies[policyId].isActive) {
+            revert PolicyNotActive(policyId);
+        }
+
+        // Check contract has sufficient USDC balance for payout
+        uint256 contractBalance = usdcToken.balanceOf(address(this));
+        if (contractBalance < amount) {
+            revert InsufficientContractBalance(amount, contractBalance);
+        }
+
+        // Update policy status before transfer (CEI pattern)
+        policies[policyId].claimed = true;
+        policies[policyId].isActive = false;
+
+        // Transfer payout to farmer
+        bool success = usdcToken.transfer(recipient, amount);
+        if (!success) {
+            revert PayoutFailed(amount, recipient);
+        }
+
+        // Emit ClaimPaid event
+        emit ClaimPaid(policyId, recipient, amount, "Weather trigger");
+    }
+
+    /**
+     * @dev Get contract's USDC balance
+     * @return balance The contract's USDC balance
+     */
+    function getContractBalance() external view returns (uint256) {
+        return usdcToken.balanceOf(address(this));
+    }
+
+    /**
+     * @dev Emergency payout function for admin use (e.g., oracle failures)
+     * @param policyId The policy ID for emergency payout
+     * @param amount The payout amount in USDC (6 decimals)
+     * @param reason The reason for emergency payout
+     */
+    function emergencyPayout(
+        uint256 policyId,
+        uint256 amount,
+        string memory reason
+    ) external onlyOwner {
+        // Check if policy exists
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        // Check if policy has already been claimed (check this first)
+        if (policies[policyId].claimed) {
+            revert PolicyAlreadyClaimed(policyId);
+        }
+
+        // Check if policy is active
+        if (!policies[policyId].isActive) {
+            revert PolicyNotActive(policyId);
+        }
+
+        // Check contract has sufficient USDC balance for payout
+        uint256 contractBalance = usdcToken.balanceOf(address(this));
+        if (contractBalance < amount) {
+            revert InsufficientContractBalance(amount, contractBalance);
+        }
+
+        // Update policy status before transfer (CEI pattern)
+        policies[policyId].claimed = true;
+        policies[policyId].isActive = false;
+
+        // Transfer payout to farmer
+        bool success = usdcToken.transfer(policies[policyId].farmer, amount);
+        if (!success) {
+            revert PayoutFailed(amount, policies[policyId].farmer);
+        }
+
+        // Emit ClaimPaid event with custom reason
+        emit ClaimPaid(policyId, policies[policyId].farmer, amount, reason);
     }
 }
