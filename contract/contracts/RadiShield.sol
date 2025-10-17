@@ -93,7 +93,13 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     // This file establishes the core structure and data definitions
 
     /**
-     * @dev Create a new insurance policy (stub implementation)
+     * @dev Create a new insurance policy
+     * @param cropType Type of crop being insured (e.g., "maize", "coffee")
+     * @param coverage Coverage amount in USDC (6 decimals)
+     * @param duration Policy duration in seconds
+     * @param latitude GPS latitude (will be scaled by 10000 for Solidity compatibility)
+     * @param longitude GPS longitude (will be scaled by 10000 for Solidity compatibility)
+     * @return policyId The unique ID of the created policy
      */
     function createPolicy(
         string memory cropType,
@@ -102,8 +108,70 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         int256 latitude,
         int256 longitude
     ) external override returns (uint256) {
-        // Implementation will be added in subsequent tasks
-        revert("Not implemented yet");
+        // Input validation for coverage amount
+        if (coverage < MIN_COVERAGE || coverage > MAX_COVERAGE) {
+            revert InvalidCoverage(coverage);
+        }
+
+        // Input validation for duration
+        if (duration < MIN_DURATION || duration > MAX_DURATION) {
+            revert InvalidDuration(duration);
+        }
+
+        // Scale GPS coordinates by 10000 for Solidity compatibility
+        int256 scaledLatitude = latitude * 10000;
+        int256 scaledLongitude = longitude * 10000;
+
+        // Input validation for GPS coordinates (after scaling)
+        // Valid latitude range: -90 to 90 degrees (scaled by 10000: -900000 to 900000)
+        // Valid longitude range: -180 to 180 degrees (scaled by 10000: -1800000 to 1800000)
+        if (
+            scaledLatitude < -900000 ||
+            scaledLatitude > 900000 ||
+            scaledLongitude < -1800000 ||
+            scaledLongitude > 1800000
+        ) {
+            revert InvalidLocation(scaledLatitude, scaledLongitude);
+        }
+
+        // Calculate premium using the existing calculatePremium function
+        uint256 premium = this.calculatePremium(coverage, scaledLatitude, scaledLongitude);
+
+        // Transfer premium from farmer to contract
+        bool success = usdcToken.transferFrom(msg.sender, address(this), premium);
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        // Generate unique policy ID
+        uint256 policyId = nextPolicyId++;
+
+        // Set policy timestamps
+        uint256 startDate = block.timestamp;
+        uint256 endDate = startDate + duration;
+
+        // Create and store the policy
+        Policy memory newPolicy = Policy({
+            id: policyId,
+            farmer: msg.sender,
+            cropType: cropType,
+            coverage: coverage,
+            premium: premium,
+            latitude: scaledLatitude,
+            longitude: scaledLongitude,
+            startDate: startDate,
+            endDate: endDate,
+            isActive: true,
+            claimed: false
+        });
+
+        policies[policyId] = newPolicy;
+        farmerPolicies[msg.sender].push(policyId);
+
+        // Emit PolicyCreated event with complete policy details
+        emit PolicyCreated(policyId, msg.sender, coverage, cropType);
+
+        return policyId;
     }
 
     /**
