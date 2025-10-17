@@ -4,13 +4,15 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@chainlink/contracts/src/v0.8/operatorforwarder/ChainlinkClient.sol";
+import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import "./interfaces/IRadiShield.sol";
 
 /**
  * @title RadiShield
  * @dev Parametric crop insurance contract using Chainlink oracles for weather data
  */
-contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
+contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     // Custom Errors for better error handling
     error InsufficientPremium(uint256 required, uint256 provided);
     error PolicyNotFound(uint256 policyId);
@@ -26,16 +28,20 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
 
     // State variables for contract configuration
     IERC20 public immutable usdcToken;
+    address public immutable oracle;
+    bytes32 public immutable jobId;
+    LinkTokenInterface public immutable linkToken;
 
     // Policy management
     uint256 private nextPolicyId = 1;
     mapping(uint256 => Policy) public policies;
     mapping(address => uint256[]) public farmerPolicies;
-
+    mapping(bytes32 => uint256) private requestToPolicy;
     mapping(uint256 => WeatherData) private policyWeatherData;
 
     // Constants
     uint256 public constant BASE_PREMIUM_RATE = 700; // 7% in basis points (7% = 700/10000)
+    uint256 public constant ORACLE_FEE = 0.1 * 10 ** 18; // 0.1 LINK
 
     uint256 public constant DROUGHT_THRESHOLD = 50; // mm in 30 days
     uint256 public constant FLOOD_THRESHOLD = 100; // mm in 24 hours
@@ -59,12 +65,28 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     /**
      * @dev Constructor initializes the contract with required addresses and parameters
      * @param _usdcToken Address of the USDC token contract
+     * @param _linkToken Address of the LINK token contract
+     * @param _oracle Address of the Chainlink oracle
+     * @param _jobId Job ID for the Chainlink AccuWeather oracle
      */
-    constructor(address _usdcToken) Ownable(msg.sender) {
+    constructor(
+        address _usdcToken,
+        address _linkToken,
+        address _oracle,
+        bytes32 _jobId
+    ) Ownable(msg.sender) {
         require(_usdcToken != address(0), "Invalid USDC token address");
+        require(_linkToken != address(0), "Invalid LINK token address");
+        require(_oracle != address(0), "Invalid oracle address");
+        require(_jobId != bytes32(0), "Invalid job ID");
 
         usdcToken = IERC20(_usdcToken);
-        // Oracle configuration will be added in subsequent tasks
+        linkToken = LinkTokenInterface(_linkToken);
+        oracle = _oracle;
+        jobId = _jobId;
+
+        _setChainlinkToken(_linkToken);
+        _setChainlinkOracle(_oracle);
     }
 
     // Implementation functions will be added in subsequent tasks
