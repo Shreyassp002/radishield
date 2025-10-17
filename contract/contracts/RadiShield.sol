@@ -107,15 +107,38 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Calculate premium for a policy (stub implementation)
+     * @dev Calculate premium for a policy based on coverage amount and GPS coordinates
+     * @param coverage Coverage amount in USDC (6 decimals)
+     * @param latitude GPS latitude scaled by 10000 for Solidity compatibility
+     * @param longitude GPS longitude scaled by 10000 for Solidity compatibility
+     * @return premium Premium amount in USDC (6 decimals)
      */
     function calculatePremium(
         uint256 coverage,
         int256 latitude,
         int256 longitude
-    ) external view override returns (uint256) {
-        // Implementation will be added in subsequent tasks
-        return (coverage * BASE_PREMIUM_RATE) / 10000;
+    ) external override returns (uint256) {
+        // Input validation for coverage amount
+        if (coverage < MIN_COVERAGE || coverage > MAX_COVERAGE) {
+            revert InvalidCoverage(coverage);
+        }
+
+        // Input validation for GPS coordinates
+        // Valid latitude range: -90 to 90 degrees (scaled by 10000: -900000 to 900000)
+        // Valid longitude range: -180 to 180 degrees (scaled by 10000: -1800000 to 1800000)
+        if (
+            latitude < -900000 || latitude > 900000 || longitude < -1800000 || longitude > 1800000
+        ) {
+            revert InvalidLocation(latitude, longitude);
+        }
+
+        // Calculate 7% base premium rate
+        uint256 premium = (coverage * BASE_PREMIUM_RATE) / 10000;
+
+        // Emit event for premium calculation
+        emit PremiumCalculated(coverage, latitude, longitude, premium);
+
+        return premium;
     }
 
     /**

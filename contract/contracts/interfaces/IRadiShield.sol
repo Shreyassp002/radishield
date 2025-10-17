@@ -54,7 +54,7 @@ interface IRadiShield {
         uint256 coverage,
         int256 latitude,
         int256 longitude
-    ) external view returns (uint256);
+    ) external returns (uint256);
 
     function getPolicy(uint256 policyId) external view returns (Policy memory);
 
