@@ -111,7 +111,7 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         uint256 duration,
         int256 latitude,
         int256 longitude
-    ) external override returns (uint256) {
+    ) external override whenNotPaused returns (uint256) {
         // Input validation for coverage amount
         if (coverage < MIN_COVERAGE || coverage > MAX_COVERAGE) {
             revert InvalidCoverage(coverage);
@@ -446,7 +446,7 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      * @param policyId The policy ID to request weather data for
      * @return requestId The Chainlink request ID for tracking
      */
-    function requestWeatherData(uint256 policyId) external returns (bytes32) {
+    function requestWeatherData(uint256 policyId) external whenNotPaused returns (bytes32) {
         // Check if policy exists
         if (policies[policyId].id == 0) {
             revert PolicyNotFound(policyId);
@@ -588,6 +588,25 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         }
     }
 
+    // Contract pause state for emergency operations
+    bool private _paused = false;
+
+    // Events for pause functionality
+    event Paused(address account);
+    event Unpaused(address account);
+
+    // Modifier to check if contract is not paused
+    modifier whenNotPaused() {
+        require(!_paused, "Contract is paused");
+        _;
+    }
+
+    // Modifier to check if contract is paused
+    modifier whenPaused() {
+        require(_paused, "Contract is not paused");
+        _;
+    }
+
     /**
      * @dev Convert integer to string for oracle parameters
      * @param value The integer value to convert
@@ -622,6 +641,211 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         }
 
         return string(buffer);
+    }
+
+    /**
+     * @dev Validate GPS coordinates are within valid ranges
+     * @param latitude GPS latitude (unscaled, in degrees)
+     * @param longitude GPS longitude (unscaled, in degrees)
+     * @return isValid True if coordinates are valid, false otherwise
+     */
+    function validateCoordinates(int256 latitude, int256 longitude) public pure returns (bool) {
+        // Valid latitude range: -90 to 90 degrees
+        // Valid longitude range: -180 to 180 degrees
+        return (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180);
+    }
+
+    /**
+     * @dev Scale GPS coordinates by 10000 for Solidity compatibility
+     * @param latitude GPS latitude in degrees
+     * @param longitude GPS longitude in degrees
+     * @return scaledLat Latitude scaled by 10000
+     * @return scaledLon Longitude scaled by 10000
+     */
+    function scaleCoordinates(
+        int256 latitude,
+        int256 longitude
+    ) public pure returns (int256 scaledLat, int256 scaledLon) {
+        require(validateCoordinates(latitude, longitude), "Invalid coordinates");
+        scaledLat = latitude * 10000;
+        scaledLon = longitude * 10000;
+    }
+
+    /**
+     * @dev Unscale GPS coordinates from Solidity format back to degrees
+     * @param scaledLatitude GPS latitude scaled by 10000
+     * @param scaledLongitude GPS longitude scaled by 10000
+     * @return lat Latitude in degrees
+     * @return lon Longitude in degrees
+     */
+    function unscaleCoordinates(
+        int256 scaledLatitude,
+        int256 scaledLongitude
+    ) public pure returns (int256 lat, int256 lon) {
+        lat = scaledLatitude / 10000;
+        lon = scaledLongitude / 10000;
+    }
+
+    /**
+     * @dev Calculate the number of days between two timestamps
+     * @param startTime Start timestamp
+     * @param endTime End timestamp
+     * @return days Number of days between timestamps
+     */
+    function daysBetween(uint256 startTime, uint256 endTime) public pure returns (uint256) {
+        require(endTime >= startTime, "End time must be after start time");
+        return (endTime - startTime) / 86400; // 86400 seconds in a day
+    }
+
+    /**
+     * @dev Calculate policy duration in days
+     * @param policyId The policy ID to calculate duration for
+     * @return duration Duration in days
+     */
+    function getPolicyDurationInDays(uint256 policyId) external view returns (uint256) {
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+        return daysBetween(policies[policyId].startDate, policies[policyId].endDate);
+    }
+
+    /**
+     * @dev Calculate remaining days for an active policy
+     * @param policyId The policy ID to calculate remaining days for
+     * @return remainingDays Number of days remaining (0 if expired)
+     */
+    function getRemainingDays(uint256 policyId) external view returns (uint256) {
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        if (block.timestamp >= policies[policyId].endDate) {
+            return 0; // Policy has expired
+        }
+
+        return daysBetween(block.timestamp, policies[policyId].endDate);
+    }
+
+    /**
+     * @dev Add days to a timestamp
+     * @param timestamp The base timestamp
+     * @param daysToAdd Number of days to add
+     * @return newTimestamp The new timestamp after adding days
+     */
+    function addDays(uint256 timestamp, uint256 daysToAdd) public pure returns (uint256) {
+        return timestamp + (daysToAdd * 86400);
+    }
+
+    /**
+     * @dev Check if a timestamp is within a specific number of days from now
+     * @param timestamp The timestamp to check
+     * @param numDays Number of days to check within
+     * @return isWithin True if timestamp is within the specified days
+     */
+    function isWithinDays(uint256 timestamp, uint256 numDays) public view returns (bool) {
+        uint256 targetTime = addDays(block.timestamp, numDays);
+        return timestamp <= targetTime;
+    }
+
+    /**
+     * @dev Pause the contract (emergency function)
+     * @notice Only owner can pause the contract
+     */
+    function pause() external onlyOwner whenNotPaused {
+        _paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /**
+     * @dev Unpause the contract
+     * @notice Only owner can unpause the contract
+     */
+    function unpause() external onlyOwner whenPaused {
+        _paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    /**
+     * @dev Check if contract is paused
+     * @return paused True if contract is paused
+     */
+    function paused() external view returns (bool) {
+        return _paused;
+    }
+
+    /**
+     * @dev Batch emergency payout for multiple policies
+     * @param policyIds Array of policy IDs for emergency payout
+     * @param amounts Array of payout amounts corresponding to each policy
+     * @param reason The reason for emergency payouts
+     */
+    function batchEmergencyPayout(
+        uint256[] calldata policyIds,
+        uint256[] calldata amounts,
+        string memory reason
+    ) external onlyOwner {
+        require(policyIds.length == amounts.length, "Arrays length mismatch");
+        require(policyIds.length > 0, "Empty arrays");
+
+        for (uint256 i = 0; i < policyIds.length; i++) {
+            // Check if policy exists and is valid for payout
+            if (
+                policies[policyIds[i]].id != 0 &&
+                !policies[policyIds[i]].claimed &&
+                policies[policyIds[i]].isActive
+            ) {
+                // Check contract has sufficient balance
+                uint256 contractBalance = usdcToken.balanceOf(address(this));
+                if (contractBalance >= amounts[i]) {
+                    // Update policy status
+                    policies[policyIds[i]].claimed = true;
+                    policies[policyIds[i]].isActive = false;
+
+                    // Transfer payout
+                    bool success = usdcToken.transfer(policies[policyIds[i]].farmer, amounts[i]);
+                    if (success) {
+                        emit ClaimPaid(
+                            policyIds[i],
+                            policies[policyIds[i]].farmer,
+                            amounts[i],
+                            reason
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @dev Emergency withdraw USDC from contract (only owner)
+     * @param amount Amount of USDC to withdraw
+     * @param recipient Address to receive the USDC
+     */
+    function emergencyWithdraw(uint256 amount, address recipient) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient");
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 contractBalance = usdcToken.balanceOf(address(this));
+        require(contractBalance >= amount, "Insufficient contract balance");
+
+        bool success = usdcToken.transfer(recipient, amount);
+        require(success, "Transfer failed");
+    }
+
+    /**
+     * @dev Emergency withdraw LINK from contract (only owner)
+     * @param amount Amount of LINK to withdraw
+     * @param recipient Address to receive the LINK
+     */
+    function emergencyWithdrawLink(uint256 amount, address recipient) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient");
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 contractBalance = linkToken.balanceOf(address(this));
+        require(contractBalance >= amount, "Insufficient LINK balance");
+
+        bool success = linkToken.transfer(recipient, amount);
+        require(success, "LINK transfer failed");
     }
 
     /**
