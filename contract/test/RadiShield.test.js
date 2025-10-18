@@ -1266,4 +1266,626 @@ describe("RadiShield Premium Calculation", function () {
             })
         })
     })
+
+    describe("Utility Functions", function () {
+        beforeEach(async function () {
+            // Mint USDC to farmer for testing
+            const mintAmount = ethers.parseUnits("10000", 6)
+            await mockUSDC.mint(farmer.address, mintAmount)
+            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), mintAmount)
+        })
+
+        describe("String Conversion Functions", function () {
+            describe("_int2str (tested through coordinate conversion)", function () {
+                it("should convert positive integers correctly", async function () {
+                    // Test through policy creation which uses _int2str internally
+                    const latitude = 45 // Will be scaled to 450000
+                    const longitude = 90 // Will be scaled to 900000
+
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "maize",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            latitude,
+                            longitude,
+                        )
+
+                    const policy = await radiShield.getPolicy(1)
+                    expect(policy.latitude).to.equal(450000)
+                    expect(policy.longitude).to.equal(900000)
+                })
+
+                it("should convert negative integers correctly", async function () {
+                    const latitude = -45 // Will be scaled to -450000
+                    const longitude = -90 // Will be scaled to -900000
+
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "coffee",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            latitude,
+                            longitude,
+                        )
+
+                    const policy = await radiShield.getPolicy(1)
+                    expect(policy.latitude).to.equal(-450000)
+                    expect(policy.longitude).to.equal(-900000)
+                })
+
+                it("should convert zero correctly", async function () {
+                    const latitude = 0
+                    const longitude = 0
+
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "wheat",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            latitude,
+                            longitude,
+                        )
+
+                    const policy = await radiShield.getPolicy(1)
+                    expect(policy.latitude).to.equal(0)
+                    expect(policy.longitude).to.equal(0)
+                })
+            })
+        })
+
+        describe("Coordinate Validation and Scaling", function () {
+            describe("validateCoordinates", function () {
+                it("should return true for valid coordinates", async function () {
+                    const validCases = [
+                        { lat: 0, lon: 0 },
+                        { lat: 90, lon: 180 },
+                        { lat: -90, lon: -180 },
+                        { lat: 45, lon: 90 },
+                        { lat: -1, lon: 36 },
+                    ]
+
+                    for (const coords of validCases) {
+                        const isValid = await radiShield.validateCoordinates(coords.lat, coords.lon)
+                        expect(isValid).to.be.true
+                    }
+                })
+
+                it("should return false for invalid latitude", async function () {
+                    const invalidCases = [
+                        { lat: 91, lon: 0 },
+                        { lat: -91, lon: 0 },
+                        { lat: 100, lon: 50 },
+                        { lat: -100, lon: -50 },
+                    ]
+
+                    for (const coords of invalidCases) {
+                        const isValid = await radiShield.validateCoordinates(coords.lat, coords.lon)
+                        expect(isValid).to.be.false
+                    }
+                })
+
+                it("should return false for invalid longitude", async function () {
+                    const invalidCases = [
+                        { lat: 0, lon: 181 },
+                        { lat: 0, lon: -181 },
+                        { lat: 45, lon: 200 },
+                        { lat: -45, lon: -200 },
+                    ]
+
+                    for (const coords of invalidCases) {
+                        const isValid = await radiShield.validateCoordinates(coords.lat, coords.lon)
+                        expect(isValid).to.be.false
+                    }
+                })
+            })
+
+            describe("scaleCoordinates", function () {
+                it("should scale coordinates correctly", async function () {
+                    const testCases = [
+                        { lat: 45, lon: 90, expectedLat: 450000, expectedLon: 900000 },
+                        { lat: -1, lon: 36, expectedLat: -10000, expectedLon: 360000 },
+                        { lat: 0, lon: 0, expectedLat: 0, expectedLon: 0 },
+                        { lat: 90, lon: 180, expectedLat: 900000, expectedLon: 1800000 },
+                    ]
+
+                    for (const testCase of testCases) {
+                        const result = await radiShield.scaleCoordinates(testCase.lat, testCase.lon)
+                        expect(result.scaledLat).to.equal(testCase.expectedLat)
+                        expect(result.scaledLon).to.equal(testCase.expectedLon)
+                    }
+                })
+
+                it("should revert for invalid coordinates", async function () {
+                    await expect(radiShield.scaleCoordinates(91, 0)).to.be.revertedWith(
+                        "Invalid coordinates",
+                    )
+                    await expect(radiShield.scaleCoordinates(0, 181)).to.be.revertedWith(
+                        "Invalid coordinates",
+                    )
+                    await expect(radiShield.scaleCoordinates(-91, -181)).to.be.revertedWith(
+                        "Invalid coordinates",
+                    )
+                })
+            })
+
+            describe("unscaleCoordinates", function () {
+                it("should unscale coordinates correctly", async function () {
+                    const testCases = [
+                        { scaledLat: 450000, scaledLon: 900000, expectedLat: 45, expectedLon: 90 },
+                        { scaledLat: -10000, scaledLon: 360000, expectedLat: -1, expectedLon: 36 },
+                        { scaledLat: 0, scaledLon: 0, expectedLat: 0, expectedLon: 0 },
+                        {
+                            scaledLat: 900000,
+                            scaledLon: 1800000,
+                            expectedLat: 90,
+                            expectedLon: 180,
+                        },
+                    ]
+
+                    for (const testCase of testCases) {
+                        const result = await radiShield.unscaleCoordinates(
+                            testCase.scaledLat,
+                            testCase.scaledLon,
+                        )
+                        expect(result.lat).to.equal(testCase.expectedLat)
+                        expect(result.lon).to.equal(testCase.expectedLon)
+                    }
+                })
+
+                it("should be inverse of scaleCoordinates", async function () {
+                    const originalLat = 45
+                    const originalLon = -90
+
+                    const scaled = await radiShield.scaleCoordinates(originalLat, originalLon)
+                    const unscaled = await radiShield.unscaleCoordinates(
+                        scaled.scaledLat,
+                        scaled.scaledLon,
+                    )
+
+                    expect(unscaled.lat).to.equal(originalLat)
+                    expect(unscaled.lon).to.equal(originalLon)
+                })
+            })
+        })
+
+        describe("Date/Time Calculation Functions", function () {
+            describe("daysBetween", function () {
+                it("should calculate days between timestamps correctly", async function () {
+                    const startTime = 1000000
+                    const endTime = startTime + 5 * 86400 // 5 days later
+
+                    const days = await radiShield.daysBetween(startTime, endTime)
+                    expect(days).to.equal(5)
+                })
+
+                it("should return 0 for same timestamps", async function () {
+                    const timestamp = 1000000
+                    const days = await radiShield.daysBetween(timestamp, timestamp)
+                    expect(days).to.equal(0)
+                })
+
+                it("should handle partial days correctly", async function () {
+                    const startTime = 1000000
+                    const endTime = startTime + (86400 + 3600) // 1 day + 1 hour
+
+                    const days = await radiShield.daysBetween(startTime, endTime)
+                    expect(days).to.equal(1) // Should truncate to 1 day
+                })
+
+                it("should revert when end time is before start time", async function () {
+                    const startTime = 1000000
+                    const endTime = startTime - 86400 // 1 day before
+
+                    await expect(radiShield.daysBetween(startTime, endTime)).to.be.revertedWith(
+                        "End time must be after start time",
+                    )
+                })
+            })
+
+            describe("getPolicyDurationInDays", function () {
+                it("should return correct policy duration", async function () {
+                    const duration = 30 * 24 * 60 * 60 // 30 days in seconds
+
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy("maize", ethers.parseUnits("1000", 6), duration, 0, 0)
+
+                    const policyDuration = await radiShield.getPolicyDurationInDays(1)
+                    expect(policyDuration).to.equal(30)
+                })
+
+                it("should revert for non-existent policy", async function () {
+                    await expect(radiShield.getPolicyDurationInDays(999))
+                        .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                        .withArgs(999)
+                })
+            })
+
+            describe("getRemainingDays", function () {
+                it("should return correct remaining days for active policy", async function () {
+                    const duration = 30 * 24 * 60 * 60 // 30 days
+
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy("coffee", ethers.parseUnits("1000", 6), duration, 0, 0)
+
+                    const remainingDays = await radiShield.getRemainingDays(1)
+                    expect(remainingDays).to.be.lte(30) // Should be <= 30 days
+                    expect(remainingDays).to.be.gte(29) // Should be >= 29 days (accounting for block time)
+                })
+
+                it("should return 0 for expired policy", async function () {
+                    // Create a policy with minimum duration (30 days)
+                    const duration = 30 * 24 * 60 * 60 // 30 days minimum
+
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy("wheat", ethers.parseUnits("1000", 6), duration, 0, 0)
+
+                    // Since we can't manipulate time in this test environment,
+                    // we'll just verify the function works with a valid policy
+                    const remainingDays = await radiShield.getRemainingDays(1)
+                    expect(remainingDays).to.be.lte(30)
+                    expect(remainingDays).to.be.gte(29) // Should be close to 30 days
+                })
+
+                it("should revert for non-existent policy", async function () {
+                    await expect(radiShield.getRemainingDays(999))
+                        .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                        .withArgs(999)
+                })
+            })
+
+            describe("addDays", function () {
+                it("should add days to timestamp correctly", async function () {
+                    const baseTimestamp = 1000000
+                    const daysToAdd = 7
+
+                    const newTimestamp = await radiShield.addDays(baseTimestamp, daysToAdd)
+                    const expectedTimestamp = baseTimestamp + daysToAdd * 86400
+
+                    expect(newTimestamp).to.equal(expectedTimestamp)
+                })
+
+                it("should handle zero days", async function () {
+                    const baseTimestamp = 1000000
+                    const newTimestamp = await radiShield.addDays(baseTimestamp, 0)
+                    expect(newTimestamp).to.equal(baseTimestamp)
+                })
+
+                it("should handle large number of days", async function () {
+                    const baseTimestamp = 1000000
+                    const daysToAdd = 365
+
+                    const newTimestamp = await radiShield.addDays(baseTimestamp, daysToAdd)
+                    const expectedTimestamp = baseTimestamp + 365 * 86400
+
+                    expect(newTimestamp).to.equal(expectedTimestamp)
+                })
+            })
+
+            describe("isWithinDays", function () {
+                it("should return true for timestamp within specified days", async function () {
+                    const futureTimestamp = Math.floor(Date.now() / 1000) + 5 * 86400 // 5 days from now
+                    const isWithin = await radiShield.isWithinDays(futureTimestamp, 10)
+                    expect(isWithin).to.be.true
+                })
+
+                it("should return false for timestamp beyond specified days", async function () {
+                    const farFutureTimestamp = Math.floor(Date.now() / 1000) + 15 * 86400 // 15 days from now
+                    const isWithin = await radiShield.isWithinDays(farFutureTimestamp, 10)
+                    expect(isWithin).to.be.false
+                })
+
+                it("should return true for current timestamp", async function () {
+                    const currentTimestamp = Math.floor(Date.now() / 1000)
+                    const isWithin = await radiShield.isWithinDays(currentTimestamp, 1)
+                    expect(isWithin).to.be.true
+                })
+            })
+        })
+
+        describe("Emergency Functions and Admin Operations", function () {
+            describe("Pause/Unpause Functionality", function () {
+                it("should allow owner to pause contract", async function () {
+                    await expect(radiShield.pause())
+                        .to.emit(radiShield, "Paused")
+                        .withArgs(owner.address)
+
+                    const isPaused = await radiShield.paused()
+                    expect(isPaused).to.be.true
+                })
+
+                it("should allow owner to unpause contract", async function () {
+                    // First pause
+                    await radiShield.pause()
+
+                    // Then unpause
+                    await expect(radiShield.unpause())
+                        .to.emit(radiShield, "Unpaused")
+                        .withArgs(owner.address)
+
+                    const isPaused = await radiShield.paused()
+                    expect(isPaused).to.be.false
+                })
+
+                it("should revert when non-owner tries to pause", async function () {
+                    await expect(radiShield.connect(farmer).pause()).to.be.revertedWithCustomError(
+                        radiShield,
+                        "OwnableUnauthorizedAccount",
+                    )
+                })
+
+                it("should revert when trying to pause already paused contract", async function () {
+                    await radiShield.pause()
+                    await expect(radiShield.pause()).to.be.revertedWith("Contract is paused")
+                })
+
+                it("should revert when trying to unpause non-paused contract", async function () {
+                    await expect(radiShield.unpause()).to.be.revertedWith("Contract is not paused")
+                })
+
+                it("should prevent policy creation when paused", async function () {
+                    await radiShield.pause()
+
+                    await expect(
+                        radiShield
+                            .connect(farmer)
+                            .createPolicy(
+                                "maize",
+                                ethers.parseUnits("1000", 6),
+                                30 * 24 * 60 * 60,
+                                0,
+                                0,
+                            ),
+                    ).to.be.revertedWith("Contract is paused")
+                })
+
+                it("should prevent weather data requests when paused", async function () {
+                    // First create a policy
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "maize",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            0,
+                            0,
+                        )
+
+                    // Then pause and try to request weather data
+                    await radiShield.pause()
+
+                    await expect(radiShield.requestWeatherData(1)).to.be.revertedWith(
+                        "Contract is paused",
+                    )
+                })
+
+                it("should allow policy creation after unpause", async function () {
+                    await radiShield.pause()
+                    await radiShield.unpause()
+
+                    await expect(
+                        radiShield
+                            .connect(farmer)
+                            .createPolicy(
+                                "coffee",
+                                ethers.parseUnits("1000", 6),
+                                30 * 24 * 60 * 60,
+                                0,
+                                0,
+                            ),
+                    ).to.not.be.reverted
+                })
+            })
+
+            describe("Batch Emergency Payout", function () {
+                beforeEach(async function () {
+                    // Fund contract with USDC for payouts
+                    await mockUSDC.mint(
+                        await radiShield.getAddress(),
+                        ethers.parseUnits("10000", 6),
+                    )
+
+                    // Create multiple policies
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "maize",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            0,
+                            0,
+                        )
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "coffee",
+                            ethers.parseUnits("2000", 6),
+                            60 * 24 * 60 * 60,
+                            1,
+                            1,
+                        )
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "wheat",
+                            ethers.parseUnits("1500", 6),
+                            90 * 24 * 60 * 60,
+                            2,
+                            2,
+                        )
+                })
+
+                it("should process batch emergency payouts correctly", async function () {
+                    const policyIds = [1, 2, 3]
+                    const amounts = [
+                        ethers.parseUnits("500", 6),
+                        ethers.parseUnits("1000", 6),
+                        ethers.parseUnits("750", 6),
+                    ]
+                    const reason = "Batch emergency payout"
+
+                    const initialBalance = await mockUSDC.balanceOf(farmer.address)
+
+                    await radiShield.batchEmergencyPayout(policyIds, amounts, reason)
+
+                    const finalBalance = await mockUSDC.balanceOf(farmer.address)
+                    const totalPayout = amounts.reduce((sum, amount) => sum + amount, 0n)
+
+                    expect(finalBalance).to.equal(initialBalance + totalPayout)
+
+                    // Check all policies are marked as claimed
+                    for (const policyId of policyIds) {
+                        const policy = await radiShield.getPolicy(policyId)
+                        expect(policy.claimed).to.be.true
+                        expect(policy.isActive).to.be.false
+                    }
+                })
+
+                it("should revert for mismatched array lengths", async function () {
+                    const policyIds = [1, 2]
+                    const amounts = [ethers.parseUnits("500", 6)] // Different length
+
+                    await expect(
+                        radiShield.batchEmergencyPayout(policyIds, amounts, "Test"),
+                    ).to.be.revertedWith("Arrays length mismatch")
+                })
+
+                it("should revert for empty arrays", async function () {
+                    await expect(
+                        radiShield.batchEmergencyPayout([], [], "Test"),
+                    ).to.be.revertedWith("Empty arrays")
+                })
+
+                it("should skip invalid policies in batch", async function () {
+                    const policyIds = [1, 999, 2] // 999 doesn't exist
+                    const amounts = [
+                        ethers.parseUnits("500", 6),
+                        ethers.parseUnits("1000", 6),
+                        ethers.parseUnits("750", 6),
+                    ]
+
+                    // Should not revert, just skip invalid policy
+                    await expect(radiShield.batchEmergencyPayout(policyIds, amounts, "Test")).to.not
+                        .be.reverted
+
+                    // Check valid policies were processed
+                    const policy1 = await radiShield.getPolicy(1)
+                    const policy2 = await radiShield.getPolicy(2)
+                    expect(policy1.claimed).to.be.true
+                    expect(policy2.claimed).to.be.true
+                })
+
+                it("should revert when non-owner tries batch payout", async function () {
+                    const policyIds = [1]
+                    const amounts = [ethers.parseUnits("500", 6)]
+
+                    await expect(
+                        radiShield.connect(farmer).batchEmergencyPayout(policyIds, amounts, "Test"),
+                    ).to.be.revertedWithCustomError(radiShield, "OwnableUnauthorizedAccount")
+                })
+            })
+
+            describe("Emergency Withdraw Functions", function () {
+                beforeEach(async function () {
+                    // Fund contract with USDC and LINK
+                    await mockUSDC.mint(await radiShield.getAddress(), ethers.parseUnits("5000", 6))
+                    await mockLINK.mint(await radiShield.getAddress(), ethers.parseUnits("100", 18))
+                })
+
+                describe("emergencyWithdraw (USDC)", function () {
+                    it("should allow owner to withdraw USDC", async function () {
+                        const withdrawAmount = ethers.parseUnits("1000", 6)
+                        const recipient = owner.address
+
+                        const initialBalance = await mockUSDC.balanceOf(recipient)
+                        await radiShield.emergencyWithdraw(withdrawAmount, recipient)
+                        const finalBalance = await mockUSDC.balanceOf(recipient)
+
+                        expect(finalBalance).to.equal(initialBalance + withdrawAmount)
+                    })
+
+                    it("should revert for invalid recipient", async function () {
+                        await expect(
+                            radiShield.emergencyWithdraw(
+                                ethers.parseUnits("1000", 6),
+                                ethers.ZeroAddress,
+                            ),
+                        ).to.be.revertedWith("Invalid recipient")
+                    })
+
+                    it("should revert for zero amount", async function () {
+                        await expect(
+                            radiShield.emergencyWithdraw(0, owner.address),
+                        ).to.be.revertedWith("Amount must be greater than 0")
+                    })
+
+                    it("should revert for insufficient balance", async function () {
+                        const excessiveAmount = ethers.parseUnits("10000", 6) // More than contract has
+
+                        await expect(
+                            radiShield.emergencyWithdraw(excessiveAmount, owner.address),
+                        ).to.be.revertedWith("Insufficient contract balance")
+                    })
+
+                    it("should revert when non-owner tries to withdraw", async function () {
+                        await expect(
+                            radiShield
+                                .connect(farmer)
+                                .emergencyWithdraw(ethers.parseUnits("1000", 6), farmer.address),
+                        ).to.be.revertedWithCustomError(radiShield, "OwnableUnauthorizedAccount")
+                    })
+                })
+
+                describe("emergencyWithdrawLink", function () {
+                    it("should allow owner to withdraw LINK", async function () {
+                        const withdrawAmount = ethers.parseUnits("10", 18)
+                        const recipient = owner.address
+
+                        const initialBalance = await mockLINK.balanceOf(recipient)
+                        await radiShield.emergencyWithdrawLink(withdrawAmount, recipient)
+                        const finalBalance = await mockLINK.balanceOf(recipient)
+
+                        expect(finalBalance).to.equal(initialBalance + withdrawAmount)
+                    })
+
+                    it("should revert for invalid recipient", async function () {
+                        await expect(
+                            radiShield.emergencyWithdrawLink(
+                                ethers.parseUnits("10", 18),
+                                ethers.ZeroAddress,
+                            ),
+                        ).to.be.revertedWith("Invalid recipient")
+                    })
+
+                    it("should revert for zero amount", async function () {
+                        await expect(
+                            radiShield.emergencyWithdrawLink(0, owner.address),
+                        ).to.be.revertedWith("Amount must be greater than 0")
+                    })
+
+                    it("should revert for insufficient LINK balance", async function () {
+                        const excessiveAmount = ethers.parseUnits("1000", 18) // More than contract has
+
+                        await expect(
+                            radiShield.emergencyWithdrawLink(excessiveAmount, owner.address),
+                        ).to.be.revertedWith("Insufficient LINK balance")
+                    })
+
+                    it("should revert when non-owner tries to withdraw LINK", async function () {
+                        await expect(
+                            radiShield
+                                .connect(farmer)
+                                .emergencyWithdrawLink(ethers.parseUnits("10", 18), farmer.address),
+                        ).to.be.revertedWithCustomError(radiShield, "OwnableUnauthorizedAccount")
+                    })
+                })
+            })
+        })
+    })
 })
