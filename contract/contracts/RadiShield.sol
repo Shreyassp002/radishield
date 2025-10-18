@@ -30,6 +30,29 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     error OracleRequestFailed(bytes32 requestId);
     error UnauthorizedOracle(address caller);
 
+    // Additional comprehensive error handling
+    error InvalidCropType(string cropType);
+    error InvalidAddress(address addr);
+    error InvalidAmount(uint256 amount);
+    error InvalidRecipient(address recipient);
+    error InsufficientAllowance(uint256 required, uint256 available);
+    error InsufficientBalance(uint256 required, uint256 available);
+    error ArrayLengthMismatch(uint256 length1, uint256 length2);
+    error EmptyArray();
+    error InvalidArrayIndex(uint256 index, uint256 maxIndex);
+    error OracleTimeout(bytes32 requestId, uint256 timeoutDuration);
+    error InvalidJobId(bytes32 jobId);
+    error InvalidOracleAddress(address oracle);
+    error InvalidTokenAddress(address token);
+    error WeatherDataNotAvailable(uint256 policyId);
+    error InvalidWeatherData(uint256 rainfall30d, uint256 rainfall24h, uint256 temperature);
+    error PayoutAlreadyProcessed(uint256 policyId);
+    error ContractPaused();
+    error ContractNotPaused();
+    error ZeroValue();
+    error InvalidTimestamp(uint256 timestamp);
+    error PolicyNotEligibleForPayout(uint256 policyId, string reason);
+
     // State variables for contract configuration
     IERC20 public immutable usdcToken;
     address public immutable oracle;
@@ -79,10 +102,18 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         address _oracle,
         bytes32 _jobId
     ) Ownable(msg.sender) {
-        require(_usdcToken != address(0), "Invalid USDC token address");
-        require(_linkToken != address(0), "Invalid LINK token address");
-        require(_oracle != address(0), "Invalid oracle address");
-        require(_jobId != bytes32(0), "Invalid job ID");
+        if (_usdcToken == address(0)) {
+            revert InvalidTokenAddress(_usdcToken);
+        }
+        if (_linkToken == address(0)) {
+            revert InvalidTokenAddress(_linkToken);
+        }
+        if (_oracle == address(0)) {
+            revert InvalidOracleAddress(_oracle);
+        }
+        if (_jobId == bytes32(0)) {
+            revert InvalidJobId(_jobId);
+        }
 
         usdcToken = IERC20(_usdcToken);
         linkToken = LinkTokenInterface(_linkToken);
@@ -112,12 +143,26 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         int256 latitude,
         int256 longitude
     ) external override whenNotPaused returns (uint256) {
+        // Input validation for crop type
+        if (bytes(cropType).length == 0) {
+            revert InvalidCropType(cropType);
+        }
+        if (bytes(cropType).length > 50) {
+            revert InvalidCropType(cropType);
+        }
+
         // Input validation for coverage amount
+        if (coverage == 0) {
+            revert ZeroValue();
+        }
         if (coverage < MIN_COVERAGE || coverage > MAX_COVERAGE) {
             revert InvalidCoverage(coverage);
         }
 
         // Input validation for duration
+        if (duration == 0) {
+            revert ZeroValue();
+        }
         if (duration < MIN_DURATION || duration > MAX_DURATION) {
             revert InvalidDuration(duration);
         }
@@ -140,6 +185,18 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
         // Calculate premium using the existing calculatePremium function
         uint256 premium = this.calculatePremium(coverage, scaledLatitude, scaledLongitude);
+
+        // Check farmer's USDC balance
+        uint256 farmerBalance = usdcToken.balanceOf(msg.sender);
+        if (farmerBalance < premium) {
+            revert InsufficientBalance(premium, farmerBalance);
+        }
+
+        // Check farmer's USDC allowance
+        uint256 allowance = usdcToken.allowance(msg.sender, address(this));
+        if (allowance < premium) {
+            revert InsufficientAllowance(premium, allowance);
+        }
 
         // Transfer premium from farmer to contract
         bool success = usdcToken.transferFrom(msg.sender, address(this), premium);
@@ -191,6 +248,9 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         int256 longitude
     ) external override returns (uint256) {
         // Input validation for coverage amount
+        if (coverage == 0) {
+            revert ZeroValue();
+        }
         if (coverage < MIN_COVERAGE || coverage > MAX_COVERAGE) {
             revert InvalidCoverage(coverage);
         }
@@ -206,6 +266,11 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
         // Calculate 7% base premium rate
         uint256 premium = (coverage * BASE_PREMIUM_RATE) / 10000;
+
+        // Ensure premium is not zero (should never happen with valid inputs, but safety check)
+        if (premium == 0) {
+            revert InvalidAmount(premium);
+        }
 
         // Emit event for premium calculation
         emit PremiumCalculated(coverage, latitude, longitude, premium);
@@ -398,6 +463,17 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         uint256 amount,
         address recipient
     ) internal nonReentrant {
+        // Input validation
+        if (policyId == 0) {
+            revert ZeroValue();
+        }
+        if (amount == 0) {
+            revert ZeroValue();
+        }
+        if (recipient == address(0)) {
+            revert InvalidRecipient(recipient);
+        }
+
         // Check if policy exists
         if (policies[policyId].id == 0) {
             revert PolicyNotFound(policyId);
@@ -411,6 +487,16 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         // Check if policy is active
         if (!policies[policyId].isActive) {
             revert PolicyNotActive(policyId);
+        }
+
+        // Validate recipient is the policy owner
+        if (recipient != policies[policyId].farmer) {
+            revert InvalidRecipient(recipient);
+        }
+
+        // Validate payout amount doesn't exceed coverage
+        if (amount > policies[policyId].coverage) {
+            revert InvalidAmount(amount);
         }
 
         // Check contract has sufficient USDC balance for payout
@@ -447,9 +533,19 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      * @return requestId The Chainlink request ID for tracking
      */
     function requestWeatherData(uint256 policyId) external whenNotPaused returns (bytes32) {
+        // Input validation for policy ID
+        if (policyId == 0) {
+            revert ZeroValue();
+        }
+
         // Check if policy exists
         if (policies[policyId].id == 0) {
             revert PolicyNotFound(policyId);
+        }
+
+        // Check if policy has already been claimed
+        if (policies[policyId].claimed) {
+            revert PolicyAlreadyClaimed(policyId);
         }
 
         // Check if policy is active
@@ -472,8 +568,18 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
         // For testing with mock oracle, generate a mock request ID
         if (oracle == address(0x1234567890123456789012345678901234567890)) {
-            requestId = keccak256(abi.encodePacked(policyId, block.timestamp));
+            requestId = keccak256(abi.encodePacked(policyId, block.timestamp, msg.sender));
         } else {
+            // Validate oracle address is not zero
+            if (oracle == address(0)) {
+                revert InvalidOracleAddress(oracle);
+            }
+
+            // Validate job ID is not zero
+            if (jobId == bytes32(0)) {
+                revert InvalidJobId(jobId);
+            }
+
             // Create Chainlink request for real oracle
             Chainlink.Request memory request = _buildChainlinkRequest(
                 jobId,
@@ -491,6 +597,16 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
             // Send the request and pay the oracle fee
             requestId = _sendChainlinkRequest(request, ORACLE_FEE);
+        }
+
+        // Validate request ID was generated
+        if (requestId == bytes32(0)) {
+            revert OracleRequestFailed(requestId);
+        }
+
+        // Check if request ID already exists (prevent duplicate requests)
+        if (requestToPolicy[requestId] != 0) {
+            revert OracleRequestFailed(requestId);
         }
 
         // Map request ID to policy ID for callback handling
@@ -515,12 +631,35 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         uint256 rainfall24h,
         uint256 temperature
     ) external recordChainlinkFulfillment(requestId) {
+        // Validate request ID
+        if (requestId == bytes32(0)) {
+            revert OracleRequestFailed(requestId);
+        }
+
         // Get the policy ID associated with this request
         uint256 policyId = requestToPolicy[requestId];
 
         // Validate that we have a valid policy for this request
-        if (policyId == 0 || policies[policyId].id == 0) {
-            return; // Silently return for invalid requests
+        if (policyId == 0) {
+            revert OracleRequestFailed(requestId);
+        }
+
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        // Validate weather data ranges (basic sanity checks)
+        if (rainfall30d > 10000 || rainfall24h > 1000 || temperature > 100) {
+            revert InvalidWeatherData(rainfall30d, rainfall24h, temperature);
+        }
+
+        // Check if policy is still active and not claimed
+        if (!policies[policyId].isActive) {
+            revert PolicyNotActive(policyId);
+        }
+
+        if (policies[policyId].claimed) {
+            revert PolicyAlreadyClaimed(policyId);
         }
 
         // Store weather data for the policy
@@ -597,13 +736,17 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
     // Modifier to check if contract is not paused
     modifier whenNotPaused() {
-        require(!_paused, "Contract is paused");
+        if (_paused) {
+            revert ContractPaused();
+        }
         _;
     }
 
     // Modifier to check if contract is paused
     modifier whenPaused() {
-        require(_paused, "Contract is not paused");
+        if (!_paused) {
+            revert ContractNotPaused();
+        }
         _;
     }
 
@@ -666,7 +809,9 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         int256 latitude,
         int256 longitude
     ) public pure returns (int256 scaledLat, int256 scaledLon) {
-        require(validateCoordinates(latitude, longitude), "Invalid coordinates");
+        if (!validateCoordinates(latitude, longitude)) {
+            revert InvalidLocation(latitude, longitude);
+        }
         scaledLat = latitude * 10000;
         scaledLon = longitude * 10000;
     }
@@ -693,7 +838,12 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      * @return days Number of days between timestamps
      */
     function daysBetween(uint256 startTime, uint256 endTime) public pure returns (uint256) {
-        require(endTime >= startTime, "End time must be after start time");
+        if (startTime == 0 || endTime == 0) {
+            revert InvalidTimestamp(startTime == 0 ? startTime : endTime);
+        }
+        if (endTime < startTime) {
+            revert InvalidTimestamp(endTime);
+        }
         return (endTime - startTime) / 86400; // 86400 seconds in a day
     }
 
@@ -784,32 +934,52 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         uint256[] calldata amounts,
         string memory reason
     ) external onlyOwner {
-        require(policyIds.length == amounts.length, "Arrays length mismatch");
-        require(policyIds.length > 0, "Empty arrays");
+        // Input validation
+        if (policyIds.length != amounts.length) {
+            revert ArrayLengthMismatch(policyIds.length, amounts.length);
+        }
+        if (policyIds.length == 0) {
+            revert EmptyArray();
+        }
+        if (bytes(reason).length == 0) {
+            revert InvalidCropType(reason); // Reusing error for string validation
+        }
 
         for (uint256 i = 0; i < policyIds.length; i++) {
+            uint256 policyId = policyIds[i];
+            uint256 amount = amounts[i];
+
+            // Skip zero policy IDs or amounts
+            if (policyId == 0 || amount == 0) {
+                continue;
+            }
+
             // Check if policy exists and is valid for payout
             if (
-                policies[policyIds[i]].id != 0 &&
-                !policies[policyIds[i]].claimed &&
-                policies[policyIds[i]].isActive
+                policies[policyId].id != 0 &&
+                !policies[policyId].claimed &&
+                policies[policyId].isActive
             ) {
+                // Validate amount doesn't exceed coverage
+                if (amount > policies[policyId].coverage) {
+                    continue; // Skip invalid amounts
+                }
+
                 // Check contract has sufficient balance
                 uint256 contractBalance = usdcToken.balanceOf(address(this));
-                if (contractBalance >= amounts[i]) {
+                if (contractBalance >= amount) {
                     // Update policy status
-                    policies[policyIds[i]].claimed = true;
-                    policies[policyIds[i]].isActive = false;
+                    policies[policyId].claimed = true;
+                    policies[policyId].isActive = false;
 
                     // Transfer payout
-                    bool success = usdcToken.transfer(policies[policyIds[i]].farmer, amounts[i]);
+                    bool success = usdcToken.transfer(policies[policyId].farmer, amount);
                     if (success) {
-                        emit ClaimPaid(
-                            policyIds[i],
-                            policies[policyIds[i]].farmer,
-                            amounts[i],
-                            reason
-                        );
+                        emit ClaimPaid(policyId, policies[policyId].farmer, amount, reason);
+                    } else {
+                        // Revert policy status if transfer failed
+                        policies[policyId].claimed = false;
+                        policies[policyId].isActive = true;
                     }
                 }
             }
@@ -822,14 +992,22 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      * @param recipient Address to receive the USDC
      */
     function emergencyWithdraw(uint256 amount, address recipient) external onlyOwner {
-        require(recipient != address(0), "Invalid recipient");
-        require(amount > 0, "Amount must be greater than 0");
+        if (recipient == address(0)) {
+            revert InvalidRecipient(recipient);
+        }
+        if (amount == 0) {
+            revert ZeroValue();
+        }
 
         uint256 contractBalance = usdcToken.balanceOf(address(this));
-        require(contractBalance >= amount, "Insufficient contract balance");
+        if (contractBalance < amount) {
+            revert InsufficientContractBalance(amount, contractBalance);
+        }
 
         bool success = usdcToken.transfer(recipient, amount);
-        require(success, "Transfer failed");
+        if (!success) {
+            revert TransferFailed();
+        }
     }
 
     /**
@@ -838,14 +1016,22 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
      * @param recipient Address to receive the LINK
      */
     function emergencyWithdrawLink(uint256 amount, address recipient) external onlyOwner {
-        require(recipient != address(0), "Invalid recipient");
-        require(amount > 0, "Amount must be greater than 0");
+        if (recipient == address(0)) {
+            revert InvalidRecipient(recipient);
+        }
+        if (amount == 0) {
+            revert ZeroValue();
+        }
 
         uint256 contractBalance = linkToken.balanceOf(address(this));
-        require(contractBalance >= amount, "Insufficient LINK balance");
+        if (contractBalance < amount) {
+            revert InsufficientContractBalance(amount, contractBalance);
+        }
 
         bool success = linkToken.transfer(recipient, amount);
-        require(success, "LINK transfer failed");
+        if (!success) {
+            revert TransferFailed();
+        }
     }
 
     /**
@@ -881,12 +1067,35 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         // Only allow this function to be called when using mock oracle for testing
         require(oracle == address(0x1234567890123456789012345678901234567890), "Only for testing");
 
+        // Validate request ID
+        if (requestId == bytes32(0)) {
+            revert OracleRequestFailed(requestId);
+        }
+
         // Get the policy ID associated with this request
         uint256 policyId = requestToPolicy[requestId];
 
         // Validate that we have a valid policy for this request
-        if (policyId == 0 || policies[policyId].id == 0) {
-            return; // Silently return for invalid requests
+        if (policyId == 0) {
+            revert OracleRequestFailed(requestId);
+        }
+
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        // Validate weather data ranges (basic sanity checks)
+        if (rainfall30d > 10000 || rainfall24h > 1000 || temperature > 100) {
+            revert InvalidWeatherData(rainfall30d, rainfall24h, temperature);
+        }
+
+        // Check if policy is still active and not claimed
+        if (!policies[policyId].isActive) {
+            revert PolicyNotActive(policyId);
+        }
+
+        if (policies[policyId].claimed) {
+            revert PolicyAlreadyClaimed(policyId);
         }
 
         // Store weather data for the policy
@@ -919,6 +1128,17 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         uint256 amount,
         string memory reason
     ) external onlyOwner {
+        // Input validation
+        if (policyId == 0) {
+            revert ZeroValue();
+        }
+        if (amount == 0) {
+            revert ZeroValue();
+        }
+        if (bytes(reason).length == 0) {
+            revert InvalidCropType(reason); // Reusing error for string validation
+        }
+
         // Check if policy exists
         if (policies[policyId].id == 0) {
             revert PolicyNotFound(policyId);
@@ -932,6 +1152,11 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
         // Check if policy is active
         if (!policies[policyId].isActive) {
             revert PolicyNotActive(policyId);
+        }
+
+        // Validate amount doesn't exceed coverage
+        if (amount > policies[policyId].coverage) {
+            revert InvalidAmount(amount);
         }
 
         // Check contract has sufficient USDC balance for payout
@@ -952,5 +1177,90 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
         // Emit ClaimPaid event with custom reason
         emit ClaimPaid(policyId, policies[policyId].farmer, amount, reason);
+    }
+
+    /**
+     * @dev Handle oracle timeout by allowing manual weather data input
+     * @param policyId The policy ID that had oracle timeout
+     * @param rainfall30d Manual rainfall data for 30 days
+     * @param rainfall24h Manual rainfall data for 24 hours
+     * @param temperature Manual temperature data
+     * @param reason Reason for manual intervention
+     */
+    function handleOracleTimeout(
+        uint256 policyId,
+        uint256 rainfall30d,
+        uint256 rainfall24h,
+        uint256 temperature,
+        string memory reason
+    ) external onlyOwner {
+        // Input validation
+        if (policyId == 0) {
+            revert ZeroValue();
+        }
+        if (bytes(reason).length == 0) {
+            revert InvalidCropType(reason);
+        }
+
+        // Check if policy exists
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+
+        // Check if policy is still active
+        if (!policies[policyId].isActive) {
+            revert PolicyNotActive(policyId);
+        }
+
+        // Check if policy has already been claimed
+        if (policies[policyId].claimed) {
+            revert PolicyAlreadyClaimed(policyId);
+        }
+
+        // Validate weather data ranges
+        if (rainfall30d > 10000 || rainfall24h > 1000 || temperature > 100) {
+            revert InvalidWeatherData(rainfall30d, rainfall24h, temperature);
+        }
+
+        // Store weather data for the policy
+        policyWeatherData[policyId] = WeatherData({
+            rainfall30d: rainfall30d,
+            rainfall24h: rainfall24h,
+            temperature: temperature,
+            timestamp: block.timestamp,
+            isValid: true
+        });
+
+        // Emit event for weather data received
+        emit WeatherDataReceived(policyId, rainfall30d, rainfall24h, temperature);
+
+        // Check weather triggers and process payout if conditions are met
+        _checkWeatherTriggersAndPayout(policyId, rainfall30d, rainfall24h, temperature);
+    }
+
+    /**
+     * @dev Cancel a pending oracle request due to timeout
+     * @param requestId The request ID to cancel
+     * @param policyId The associated policy ID
+     */
+    function cancelOracleRequest(bytes32 requestId, uint256 policyId) external onlyOwner {
+        // Input validation
+        if (requestId == bytes32(0)) {
+            revert OracleRequestFailed(requestId);
+        }
+        if (policyId == 0) {
+            revert ZeroValue();
+        }
+
+        // Verify the request exists and matches the policy
+        if (requestToPolicy[requestId] != policyId) {
+            revert OracleRequestFailed(requestId);
+        }
+
+        // Clean up the request mapping
+        delete requestToPolicy[requestId];
+
+        // Emit timeout event
+        emit WeatherDataRequested(policyId, requestId); // Reusing event for tracking
     }
 }
