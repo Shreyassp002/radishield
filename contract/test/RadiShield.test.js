@@ -548,12 +548,12 @@ describe("RadiShield Premium Calculation", function () {
                 const contractBalance = await radiShield.getContractBalance()
                 expect(contractBalance).to.be.gt(0)
 
-                // Try to payout more than contract balance
-                const excessiveAmount = contractBalance + ethers.parseUnits("1000", 6)
+                // Try to payout amount that exceeds coverage (should revert with InvalidAmount)
+                const excessiveAmount = ethers.parseUnits("2000", 6) // Exceeds $1000 coverage
 
                 await expect(
                     radiShield.emergencyPayout(1, excessiveAmount, "Excessive payout"),
-                ).to.be.revertedWithCustomError(radiShield, "InsufficientContractBalance")
+                ).to.be.revertedWithCustomError(radiShield, "InvalidAmount")
             })
         })
 
@@ -660,7 +660,7 @@ describe("RadiShield Premium Calculation", function () {
                 await radiShield.emergencyPayout(policyId, ethers.parseUnits("500", 6), "Test")
 
                 await expect(radiShield.requestWeatherData(policyId))
-                    .to.be.revertedWithCustomError(radiShield, "PolicyNotActive")
+                    .to.be.revertedWithCustomError(radiShield, "PolicyAlreadyClaimed")
                     .withArgs(policyId)
             })
 
@@ -1400,15 +1400,17 @@ describe("RadiShield Premium Calculation", function () {
                 })
 
                 it("should revert for invalid coordinates", async function () {
-                    await expect(radiShield.scaleCoordinates(91, 0)).to.be.revertedWith(
-                        "Invalid coordinates",
+                    await expect(radiShield.scaleCoordinates(91, 0)).to.be.revertedWithCustomError(
+                        radiShield,
+                        "InvalidLocation",
                     )
-                    await expect(radiShield.scaleCoordinates(0, 181)).to.be.revertedWith(
-                        "Invalid coordinates",
+                    await expect(radiShield.scaleCoordinates(0, 181)).to.be.revertedWithCustomError(
+                        radiShield,
+                        "InvalidLocation",
                     )
-                    await expect(radiShield.scaleCoordinates(-91, -181)).to.be.revertedWith(
-                        "Invalid coordinates",
-                    )
+                    await expect(
+                        radiShield.scaleCoordinates(-91, -181),
+                    ).to.be.revertedWithCustomError(radiShield, "InvalidLocation")
                 })
             })
 
@@ -1480,9 +1482,9 @@ describe("RadiShield Premium Calculation", function () {
                     const startTime = 1000000
                     const endTime = startTime - 86400 // 1 day before
 
-                    await expect(radiShield.daysBetween(startTime, endTime)).to.be.revertedWith(
-                        "End time must be after start time",
-                    )
+                    await expect(
+                        radiShield.daysBetween(startTime, endTime),
+                    ).to.be.revertedWithCustomError(radiShield, "InvalidTimestamp")
                 })
             })
 
@@ -1622,11 +1624,17 @@ describe("RadiShield Premium Calculation", function () {
 
                 it("should revert when trying to pause already paused contract", async function () {
                     await radiShield.pause()
-                    await expect(radiShield.pause()).to.be.revertedWith("Contract is paused")
+                    await expect(radiShield.pause()).to.be.revertedWithCustomError(
+                        radiShield,
+                        "ContractPaused",
+                    )
                 })
 
                 it("should revert when trying to unpause non-paused contract", async function () {
-                    await expect(radiShield.unpause()).to.be.revertedWith("Contract is not paused")
+                    await expect(radiShield.unpause()).to.be.revertedWithCustomError(
+                        radiShield,
+                        "ContractNotPaused",
+                    )
                 })
 
                 it("should prevent policy creation when paused", async function () {
@@ -1642,7 +1650,7 @@ describe("RadiShield Premium Calculation", function () {
                                 0,
                                 0,
                             ),
-                    ).to.be.revertedWith("Contract is paused")
+                    ).to.be.revertedWithCustomError(radiShield, "ContractPaused")
                 })
 
                 it("should prevent weather data requests when paused", async function () {
@@ -1660,8 +1668,9 @@ describe("RadiShield Premium Calculation", function () {
                     // Then pause and try to request weather data
                     await radiShield.pause()
 
-                    await expect(radiShield.requestWeatherData(1)).to.be.revertedWith(
-                        "Contract is paused",
+                    await expect(radiShield.requestWeatherData(1)).to.be.revertedWithCustomError(
+                        radiShield,
+                        "ContractPaused",
                     )
                 })
 
@@ -1753,13 +1762,13 @@ describe("RadiShield Premium Calculation", function () {
 
                     await expect(
                         radiShield.batchEmergencyPayout(policyIds, amounts, "Test"),
-                    ).to.be.revertedWith("Arrays length mismatch")
+                    ).to.be.revertedWithCustomError(radiShield, "ArrayLengthMismatch")
                 })
 
                 it("should revert for empty arrays", async function () {
                     await expect(
                         radiShield.batchEmergencyPayout([], [], "Test"),
-                    ).to.be.revertedWith("Empty arrays")
+                    ).to.be.revertedWithCustomError(radiShield, "EmptyArray")
                 })
 
                 it("should skip invalid policies in batch", async function () {
@@ -1816,13 +1825,13 @@ describe("RadiShield Premium Calculation", function () {
                                 ethers.parseUnits("1000", 6),
                                 ethers.ZeroAddress,
                             ),
-                        ).to.be.revertedWith("Invalid recipient")
+                        ).to.be.revertedWithCustomError(radiShield, "InvalidRecipient")
                     })
 
                     it("should revert for zero amount", async function () {
                         await expect(
                             radiShield.emergencyWithdraw(0, owner.address),
-                        ).to.be.revertedWith("Amount must be greater than 0")
+                        ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
                     })
 
                     it("should revert for insufficient balance", async function () {
@@ -1830,7 +1839,7 @@ describe("RadiShield Premium Calculation", function () {
 
                         await expect(
                             radiShield.emergencyWithdraw(excessiveAmount, owner.address),
-                        ).to.be.revertedWith("Insufficient contract balance")
+                        ).to.be.revertedWithCustomError(radiShield, "InsufficientContractBalance")
                     })
 
                     it("should revert when non-owner tries to withdraw", async function () {
@@ -1860,13 +1869,13 @@ describe("RadiShield Premium Calculation", function () {
                                 ethers.parseUnits("10", 18),
                                 ethers.ZeroAddress,
                             ),
-                        ).to.be.revertedWith("Invalid recipient")
+                        ).to.be.revertedWithCustomError(radiShield, "InvalidRecipient")
                     })
 
                     it("should revert for zero amount", async function () {
                         await expect(
                             radiShield.emergencyWithdrawLink(0, owner.address),
-                        ).to.be.revertedWith("Amount must be greater than 0")
+                        ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
                     })
 
                     it("should revert for insufficient LINK balance", async function () {
@@ -1874,7 +1883,7 @@ describe("RadiShield Premium Calculation", function () {
 
                         await expect(
                             radiShield.emergencyWithdrawLink(excessiveAmount, owner.address),
-                        ).to.be.revertedWith("Insufficient LINK balance")
+                        ).to.be.revertedWithCustomError(radiShield, "InsufficientContractBalance")
                     })
 
                     it("should revert when non-owner tries to withdraw LINK", async function () {
@@ -1885,6 +1894,539 @@ describe("RadiShield Premium Calculation", function () {
                         ).to.be.revertedWithCustomError(radiShield, "OwnableUnauthorizedAccount")
                     })
                 })
+            })
+        })
+    })
+
+    describe("Comprehensive Error Handling", function () {
+        beforeEach(async function () {
+            // Mint USDC to farmer and contract for testing
+            const usdcAmount = ethers.parseUnits("10000", 6)
+            const linkAmount = ethers.parseUnits("100", 18)
+
+            await mockUSDC.mint(farmer.address, usdcAmount)
+            await mockUSDC.mint(await radiShield.getAddress(), usdcAmount)
+            await mockLINK.mint(await radiShield.getAddress(), linkAmount)
+
+            // Approve RadiShield contract to spend farmer's USDC
+            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), usdcAmount)
+        })
+
+        describe("Constructor Error Handling", function () {
+            it("should revert for invalid USDC token address", async function () {
+                const RadiShield = await ethers.getContractFactory("RadiShield")
+
+                await expect(
+                    RadiShield.deploy(
+                        ethers.ZeroAddress, // Invalid USDC address
+                        await mockLINK.getAddress(),
+                        MOCK_ORACLE_ADDRESS,
+                        MOCK_JOB_ID,
+                    ),
+                ).to.be.revertedWithCustomError(RadiShield, "InvalidTokenAddress")
+            })
+
+            it("should revert for invalid LINK token address", async function () {
+                const RadiShield = await ethers.getContractFactory("RadiShield")
+
+                await expect(
+                    RadiShield.deploy(
+                        await mockUSDC.getAddress(),
+                        ethers.ZeroAddress, // Invalid LINK address
+                        MOCK_ORACLE_ADDRESS,
+                        MOCK_JOB_ID,
+                    ),
+                ).to.be.revertedWithCustomError(RadiShield, "InvalidTokenAddress")
+            })
+
+            it("should revert for invalid oracle address", async function () {
+                const RadiShield = await ethers.getContractFactory("RadiShield")
+
+                await expect(
+                    RadiShield.deploy(
+                        await mockUSDC.getAddress(),
+                        await mockLINK.getAddress(),
+                        ethers.ZeroAddress, // Invalid oracle address
+                        MOCK_JOB_ID,
+                    ),
+                ).to.be.revertedWithCustomError(RadiShield, "InvalidOracleAddress")
+            })
+
+            it("should revert for invalid job ID", async function () {
+                const RadiShield = await ethers.getContractFactory("RadiShield")
+
+                await expect(
+                    RadiShield.deploy(
+                        await mockUSDC.getAddress(),
+                        await mockLINK.getAddress(),
+                        MOCK_ORACLE_ADDRESS,
+                        ethers.ZeroHash, // Invalid job ID
+                    ),
+                ).to.be.revertedWithCustomError(RadiShield, "InvalidJobId")
+            })
+        })
+
+        describe("Policy Creation Error Handling", function () {
+            it("should revert for empty crop type", async function () {
+                await expect(
+                    radiShield.connect(farmer).createPolicy(
+                        "", // Empty crop type
+                        ethers.parseUnits("1000", 6),
+                        30 * 24 * 60 * 60,
+                        0,
+                        0,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidCropType")
+            })
+
+            it("should revert for crop type too long", async function () {
+                const longCropType = "a".repeat(51) // 51 characters, exceeds 50 limit
+
+                await expect(
+                    radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            longCropType,
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            0,
+                            0,
+                        ),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidCropType")
+            })
+
+            it("should revert for zero coverage", async function () {
+                await expect(
+                    radiShield.connect(farmer).createPolicy(
+                        "maize",
+                        0, // Zero coverage
+                        30 * 24 * 60 * 60,
+                        0,
+                        0,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+
+            it("should revert for zero duration", async function () {
+                await expect(
+                    radiShield.connect(farmer).createPolicy(
+                        "maize",
+                        ethers.parseUnits("1000", 6),
+                        0, // Zero duration
+                        0,
+                        0,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+
+            it("should revert for insufficient farmer balance", async function () {
+                // Create farmer with insufficient balance
+                const [, , poorFarmer] = await ethers.getSigners()
+                await mockUSDC.mint(poorFarmer.address, ethers.parseUnits("10", 6)) // Only $10
+                await mockUSDC
+                    .connect(poorFarmer)
+                    .approve(await radiShield.getAddress(), ethers.parseUnits("10", 6))
+
+                await expect(
+                    radiShield.connect(poorFarmer).createPolicy(
+                        "maize",
+                        ethers.parseUnits("1000", 6), // Requires $70 premium
+                        30 * 24 * 60 * 60,
+                        0,
+                        0,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InsufficientBalance")
+            })
+
+            it("should revert for insufficient allowance", async function () {
+                // Reset allowance to insufficient amount
+                await mockUSDC
+                    .connect(farmer)
+                    .approve(await radiShield.getAddress(), ethers.parseUnits("10", 6))
+
+                await expect(
+                    radiShield.connect(farmer).createPolicy(
+                        "maize",
+                        ethers.parseUnits("1000", 6), // Requires $70 premium
+                        30 * 24 * 60 * 60,
+                        0,
+                        0,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InsufficientAllowance")
+            })
+        })
+
+        describe("Premium Calculation Error Handling", function () {
+            it("should revert for zero coverage in calculatePremium", async function () {
+                await expect(radiShield.calculatePremium(0, 0, 0)).to.be.revertedWithCustomError(
+                    radiShield,
+                    "ZeroValue",
+                )
+            })
+        })
+
+        describe("Weather Data Request Error Handling", function () {
+            let policyId
+
+            beforeEach(async function () {
+                // Create a test policy
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+                policyId = 1
+            })
+
+            it("should revert for zero policy ID", async function () {
+                await expect(radiShield.requestWeatherData(0)).to.be.revertedWithCustomError(
+                    radiShield,
+                    "ZeroValue",
+                )
+            })
+
+            it("should revert for already claimed policy", async function () {
+                // Claim the policy first
+                await radiShield.emergencyPayout(policyId, ethers.parseUnits("500", 6), "Test")
+
+                await expect(radiShield.requestWeatherData(policyId)).to.be.revertedWithCustomError(
+                    radiShield,
+                    "PolicyAlreadyClaimed",
+                )
+            })
+
+            it("should revert when contract has insufficient LINK", async function () {
+                // Deploy new contract with no LINK
+                const RadiShield = await ethers.getContractFactory("RadiShield")
+                const testContract = await RadiShield.deploy(
+                    await mockUSDC.getAddress(),
+                    await mockLINK.getAddress(),
+                    MOCK_ORACLE_ADDRESS,
+                    MOCK_JOB_ID,
+                )
+
+                // Create policy in new contract
+                await mockUSDC
+                    .connect(farmer)
+                    .approve(await testContract.getAddress(), ethers.parseUnits("1000", 6))
+                await testContract
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+
+                await expect(testContract.requestWeatherData(1)).to.be.revertedWithCustomError(
+                    testContract,
+                    "InsufficientContractBalance",
+                )
+            })
+        })
+
+        describe("Oracle Callback Error Handling", function () {
+            let policyId, requestId
+
+            beforeEach(async function () {
+                // Create policy and request weather data
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+                policyId = 1
+
+                const tx = await radiShield.requestWeatherData(policyId)
+                const receipt = await tx.wait()
+                const event = receipt.logs.find((log) => {
+                    try {
+                        const parsed = radiShield.interface.parseLog(log)
+                        return parsed.name === "WeatherDataRequested"
+                    } catch {
+                        return false
+                    }
+                })
+                requestId = radiShield.interface.parseLog(event).args[1]
+            })
+
+            it("should revert for invalid weather data ranges", async function () {
+                await expect(
+                    radiShield.testFulfillWeatherData(
+                        requestId,
+                        15000, // Invalid rainfall30d > 10000
+                        50,
+                        30,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidWeatherData")
+            })
+
+            it("should revert for zero request ID", async function () {
+                await expect(
+                    radiShield.testFulfillWeatherData(
+                        ethers.ZeroHash, // Zero request ID
+                        50,
+                        20,
+                        30,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "OracleRequestFailed")
+            })
+        })
+
+        describe("Payout Error Handling", function () {
+            let policyId
+
+            beforeEach(async function () {
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+                policyId = 1
+            })
+
+            it("should revert emergency payout for zero policy ID", async function () {
+                await expect(
+                    radiShield.emergencyPayout(0, ethers.parseUnits("500", 6), "Test"),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+
+            it("should revert emergency payout for zero amount", async function () {
+                await expect(
+                    radiShield.emergencyPayout(policyId, 0, "Test"),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+
+            it("should revert emergency payout for empty reason", async function () {
+                await expect(
+                    radiShield.emergencyPayout(policyId, ethers.parseUnits("500", 6), ""),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidCropType")
+            })
+
+            it("should revert emergency payout for amount exceeding coverage", async function () {
+                await expect(
+                    radiShield.emergencyPayout(policyId, ethers.parseUnits("2000", 6), "Test"), // Exceeds $1000 coverage
+                ).to.be.revertedWithCustomError(radiShield, "InvalidAmount")
+            })
+        })
+
+        describe("Batch Operations Error Handling", function () {
+            beforeEach(async function () {
+                // Create multiple policies
+                for (let i = 0; i < 3; i++) {
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "maize",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            i,
+                            i,
+                        )
+                }
+            })
+
+            it("should revert batch payout for mismatched array lengths", async function () {
+                await expect(
+                    radiShield.batchEmergencyPayout(
+                        [1, 2], // 2 elements
+                        [ethers.parseUnits("500", 6)], // 1 element
+                        "Test",
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "ArrayLengthMismatch")
+            })
+
+            it("should revert batch payout for empty arrays", async function () {
+                await expect(
+                    radiShield.batchEmergencyPayout([], [], "Test"),
+                ).to.be.revertedWithCustomError(radiShield, "EmptyArray")
+            })
+
+            it("should revert batch payout for empty reason", async function () {
+                await expect(
+                    radiShield.batchEmergencyPayout(
+                        [1],
+                        [ethers.parseUnits("500", 6)],
+                        "", // Empty reason
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidCropType")
+            })
+        })
+
+        describe("Emergency Withdraw Error Handling", function () {
+            it("should revert USDC withdraw for zero recipient", async function () {
+                await expect(
+                    radiShield.emergencyWithdraw(ethers.parseUnits("100", 6), ethers.ZeroAddress),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidRecipient")
+            })
+
+            it("should revert USDC withdraw for zero amount", async function () {
+                await expect(
+                    radiShield.emergencyWithdraw(0, owner.address),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+
+            it("should revert LINK withdraw for zero recipient", async function () {
+                await expect(
+                    radiShield.emergencyWithdrawLink(
+                        ethers.parseUnits("10", 18),
+                        ethers.ZeroAddress,
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidRecipient")
+            })
+
+            it("should revert LINK withdraw for zero amount", async function () {
+                await expect(
+                    radiShield.emergencyWithdrawLink(0, owner.address),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+        })
+
+        describe("Pause/Unpause Error Handling", function () {
+            it("should revert when trying to pause already paused contract", async function () {
+                await radiShield.pause()
+
+                await expect(radiShield.pause()).to.be.revertedWithCustomError(
+                    radiShield,
+                    "ContractPaused",
+                )
+            })
+
+            it("should revert when trying to unpause non-paused contract", async function () {
+                await expect(radiShield.unpause()).to.be.revertedWithCustomError(
+                    radiShield,
+                    "ContractNotPaused",
+                )
+            })
+
+            it("should revert policy creation when paused", async function () {
+                await radiShield.pause()
+
+                await expect(
+                    radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "maize",
+                            ethers.parseUnits("1000", 6),
+                            30 * 24 * 60 * 60,
+                            0,
+                            0,
+                        ),
+                ).to.be.revertedWithCustomError(radiShield, "ContractPaused")
+            })
+
+            it("should revert weather data request when paused", async function () {
+                // Create policy first
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+
+                await radiShield.pause()
+
+                await expect(radiShield.requestWeatherData(1)).to.be.revertedWithCustomError(
+                    radiShield,
+                    "ContractPaused",
+                )
+            })
+        })
+
+        describe("Coordinate Validation Error Handling", function () {
+            it("should revert scaleCoordinates for invalid latitude", async function () {
+                await expect(
+                    radiShield.scaleCoordinates(91, 0), // Invalid latitude > 90
+                ).to.be.revertedWithCustomError(radiShield, "InvalidLocation")
+            })
+
+            it("should revert scaleCoordinates for invalid longitude", async function () {
+                await expect(
+                    radiShield.scaleCoordinates(0, 181), // Invalid longitude > 180
+                ).to.be.revertedWithCustomError(radiShield, "InvalidLocation")
+            })
+        })
+
+        describe("Time Calculation Error Handling", function () {
+            it("should revert daysBetween for zero start time", async function () {
+                await expect(radiShield.daysBetween(0, 1000000)).to.be.revertedWithCustomError(
+                    radiShield,
+                    "InvalidTimestamp",
+                )
+            })
+
+            it("should revert daysBetween for zero end time", async function () {
+                await expect(radiShield.daysBetween(1000000, 0)).to.be.revertedWithCustomError(
+                    radiShield,
+                    "InvalidTimestamp",
+                )
+            })
+
+            it("should revert daysBetween for end time before start time", async function () {
+                await expect(
+                    radiShield.daysBetween(2000000, 1000000),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidTimestamp")
+            })
+        })
+
+        describe("Oracle Timeout Handling", function () {
+            let policyId
+
+            beforeEach(async function () {
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+                policyId = 1
+            })
+
+            it("should allow owner to handle oracle timeout with manual data", async function () {
+                await expect(
+                    radiShield.handleOracleTimeout(
+                        policyId,
+                        25, // Drought conditions
+                        10,
+                        30,
+                        "Oracle timeout - manual intervention",
+                    ),
+                ).to.emit(radiShield, "WeatherDataReceived")
+            })
+
+            it("should revert handleOracleTimeout for zero policy ID", async function () {
+                await expect(
+                    radiShield.handleOracleTimeout(0, 50, 20, 30, "Test"),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
+            })
+
+            it("should revert handleOracleTimeout for empty reason", async function () {
+                await expect(
+                    radiShield.handleOracleTimeout(policyId, 50, 20, 30, ""),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidCropType")
+            })
+
+            it("should revert handleOracleTimeout for invalid weather data", async function () {
+                await expect(
+                    radiShield.handleOracleTimeout(
+                        policyId,
+                        15000, // Invalid rainfall > 10000
+                        20,
+                        30,
+                        "Test",
+                    ),
+                ).to.be.revertedWithCustomError(radiShield, "InvalidWeatherData")
+            })
+
+            it("should allow owner to cancel oracle request", async function () {
+                const tx = await radiShield.requestWeatherData(policyId)
+                const receipt = await tx.wait()
+                const event = receipt.logs.find((log) => {
+                    try {
+                        const parsed = radiShield.interface.parseLog(log)
+                        return parsed.name === "WeatherDataRequested"
+                    } catch {
+                        return false
+                    }
+                })
+                const requestId = radiShield.interface.parseLog(event).args[1]
+
+                await expect(radiShield.cancelOracleRequest(requestId, policyId)).to.not.be.reverted
+            })
+
+            it("should revert cancelOracleRequest for zero request ID", async function () {
+                await expect(
+                    radiShield.cancelOracleRequest(ethers.ZeroHash, policyId),
+                ).to.be.revertedWithCustomError(radiShield, "OracleRequestFailed")
+            })
+
+            it("should revert cancelOracleRequest for zero policy ID", async function () {
+                await expect(
+                    radiShield.cancelOracleRequest(ethers.id("test"), 0),
+                ).to.be.revertedWithCustomError(radiShield, "ZeroValue")
             })
         })
     })
