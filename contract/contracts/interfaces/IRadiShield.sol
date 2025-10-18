@@ -59,4 +59,32 @@ interface IRadiShield {
     function getPolicy(uint256 policyId) external view returns (Policy memory);
 
     function getPoliciesByFarmer(address farmer) external view returns (uint256[] memory);
+
+    function isPolicyActive(uint256 policyId) external view returns (bool);
+
+    function isPolicyClaimed(uint256 policyId) external view returns (bool);
+
+    function isPolicyExpired(uint256 policyId) external view returns (bool);
+
+    function getTotalPolicies() external view returns (uint256);
+
+    function getActivePoliciesCount() external view returns (uint256);
+
+    function getClaimedPoliciesCount() external view returns (uint256);
+
+    function getTotalCoverage() external view returns (uint256);
+
+    function getTotalPremiums() external view returns (uint256);
+
+    function getContractStats()
+        external
+        view
+        returns (
+            uint256 totalPolicies,
+            uint256 activePolicies,
+            uint256 claimedPolicies,
+            uint256 totalCoverage,
+            uint256 totalPremiums,
+            uint256 contractBalance
+        );
 }

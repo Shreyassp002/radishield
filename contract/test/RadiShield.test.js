@@ -904,4 +904,366 @@ describe("RadiShield Premium Calculation", function () {
             })
         })
     })
+
+    describe("Policy Query and Management Functions", function () {
+        let policyIds = []
+
+        beforeEach(async function () {
+            // Mint USDC to farmer and contract for testing
+            const usdcAmount = ethers.parseUnits("20000", 6) // $20,000 USDC
+            await mockUSDC.mint(farmer.address, usdcAmount)
+            await mockUSDC.mint(await radiShield.getAddress(), usdcAmount)
+
+            // Approve RadiShield contract to spend farmer's USDC
+            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), usdcAmount)
+
+            // Create multiple test policies
+            const policies = [
+                {
+                    cropType: "maize",
+                    coverage: ethers.parseUnits("1000", 6),
+                    duration: 30 * 24 * 60 * 60,
+                    lat: -1,
+                    lon: 36,
+                },
+                {
+                    cropType: "coffee",
+                    coverage: ethers.parseUnits("2000", 6),
+                    duration: 60 * 24 * 60 * 60,
+                    lat: -2,
+                    lon: 37,
+                },
+                {
+                    cropType: "wheat",
+                    coverage: ethers.parseUnits("1500", 6),
+                    duration: 90 * 24 * 60 * 60,
+                    lat: -3,
+                    lon: 38,
+                },
+            ]
+
+            policyIds = []
+            for (let i = 0; i < policies.length; i++) {
+                const policy = policies[i]
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy(
+                        policy.cropType,
+                        policy.coverage,
+                        policy.duration,
+                        policy.lat,
+                        policy.lon,
+                    )
+                policyIds.push(i + 1) // Policy IDs start from 1
+            }
+        })
+
+        describe("getPolicy", function () {
+            it("should return complete policy details for valid policy ID", async function () {
+                const policyId = policyIds[0]
+                const policy = await radiShield.getPolicy(policyId)
+
+                expect(policy.id).to.equal(policyId)
+                expect(policy.farmer).to.equal(farmer.address)
+                expect(policy.cropType).to.equal("maize")
+                expect(policy.coverage).to.equal(ethers.parseUnits("1000", 6))
+                expect(policy.latitude).to.equal(-10000) // Scaled by 10000
+                expect(policy.longitude).to.equal(360000) // Scaled by 10000
+                expect(policy.isActive).to.be.true
+                expect(policy.claimed).to.be.false
+                expect(policy.startDate).to.be.gt(0)
+                expect(policy.endDate).to.be.gt(policy.startDate)
+            })
+
+            it("should revert for non-existent policy ID", async function () {
+                const nonExistentId = 999
+
+                await expect(radiShield.getPolicy(nonExistentId))
+                    .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                    .withArgs(nonExistentId)
+            })
+
+            it("should return correct policy details for multiple policies", async function () {
+                const expectedCoverages = [
+                    ethers.parseUnits("1000", 6),
+                    ethers.parseUnits("2000", 6),
+                    ethers.parseUnits("1500", 6),
+                ]
+                const expectedCropTypes = ["maize", "coffee", "wheat"]
+
+                for (let i = 0; i < policyIds.length; i++) {
+                    const policy = await radiShield.getPolicy(policyIds[i])
+                    expect(policy.coverage).to.equal(expectedCoverages[i])
+                    expect(policy.cropType).to.equal(expectedCropTypes[i])
+                    expect(policy.farmer).to.equal(farmer.address)
+                }
+            })
+        })
+
+        describe("getPoliciesByFarmer", function () {
+            it("should return all policy IDs for a farmer", async function () {
+                const farmerPolicies = await radiShield.getPoliciesByFarmer(farmer.address)
+
+                expect(farmerPolicies.length).to.equal(3)
+                expect(farmerPolicies[0]).to.equal(1)
+                expect(farmerPolicies[1]).to.equal(2)
+                expect(farmerPolicies[2]).to.equal(3)
+            })
+
+            it("should return empty array for farmer with no policies", async function () {
+                const [, , newFarmer] = await ethers.getSigners()
+                const farmerPolicies = await radiShield.getPoliciesByFarmer(newFarmer.address)
+
+                expect(farmerPolicies.length).to.equal(0)
+            })
+
+            it("should return correct policies after creating additional policies", async function () {
+                // Create one more policy
+                await radiShield
+                    .connect(farmer)
+                    .createPolicy("rice", ethers.parseUnits("800", 6), 45 * 24 * 60 * 60, -4, 39)
+
+                const farmerPolicies = await radiShield.getPoliciesByFarmer(farmer.address)
+                expect(farmerPolicies.length).to.equal(4)
+                expect(farmerPolicies[3]).to.equal(4) // New policy ID
+            })
+        })
+
+        describe("Policy Status Checking Functions", function () {
+            describe("isPolicyActive", function () {
+                it("should return true for active unclaimed policy", async function () {
+                    const policyId = policyIds[0]
+                    const isActive = await radiShield.isPolicyActive(policyId)
+                    expect(isActive).to.be.true
+                })
+
+                it("should return false for claimed policy", async function () {
+                    const policyId = policyIds[0]
+
+                    // Claim the policy
+                    await radiShield.emergencyPayout(
+                        policyId,
+                        ethers.parseUnits("500", 6),
+                        "Test claim",
+                    )
+
+                    const isActive = await radiShield.isPolicyActive(policyId)
+                    expect(isActive).to.be.false
+                })
+
+                it("should revert for non-existent policy", async function () {
+                    const nonExistentId = 999
+
+                    await expect(radiShield.isPolicyActive(nonExistentId))
+                        .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                        .withArgs(nonExistentId)
+                })
+            })
+
+            describe("isPolicyClaimed", function () {
+                it("should return false for unclaimed policy", async function () {
+                    const policyId = policyIds[0]
+                    const isClaimed = await radiShield.isPolicyClaimed(policyId)
+                    expect(isClaimed).to.be.false
+                })
+
+                it("should return true for claimed policy", async function () {
+                    const policyId = policyIds[0]
+
+                    // Claim the policy
+                    await radiShield.emergencyPayout(
+                        policyId,
+                        ethers.parseUnits("500", 6),
+                        "Test claim",
+                    )
+
+                    const isClaimed = await radiShield.isPolicyClaimed(policyId)
+                    expect(isClaimed).to.be.true
+                })
+
+                it("should revert for non-existent policy", async function () {
+                    const nonExistentId = 999
+
+                    await expect(radiShield.isPolicyClaimed(nonExistentId))
+                        .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                        .withArgs(nonExistentId)
+                })
+            })
+
+            describe("isPolicyExpired", function () {
+                it("should return false for non-expired policy", async function () {
+                    const policyId = policyIds[0]
+                    const isExpired = await radiShield.isPolicyExpired(policyId)
+                    expect(isExpired).to.be.false
+                })
+
+                it("should revert for non-existent policy", async function () {
+                    const nonExistentId = 999
+
+                    await expect(radiShield.isPolicyExpired(nonExistentId))
+                        .to.be.revertedWithCustomError(radiShield, "PolicyNotFound")
+                        .withArgs(nonExistentId)
+                })
+            })
+        })
+
+        describe("Contract Statistics Functions", function () {
+            describe("getTotalPolicies", function () {
+                it("should return correct total number of policies", async function () {
+                    const totalPolicies = await radiShield.getTotalPolicies()
+                    expect(totalPolicies).to.equal(3)
+                })
+
+                it("should increment when new policies are created", async function () {
+                    const initialTotal = await radiShield.getTotalPolicies()
+
+                    // Create one more policy
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy(
+                            "barley",
+                            ethers.parseUnits("600", 6),
+                            30 * 24 * 60 * 60,
+                            -5,
+                            40,
+                        )
+
+                    const newTotal = await radiShield.getTotalPolicies()
+                    expect(newTotal).to.equal(initialTotal + BigInt(1))
+                })
+            })
+
+            describe("getActivePoliciesCount", function () {
+                it("should return correct number of active policies", async function () {
+                    const activePolicies = await radiShield.getActivePoliciesCount()
+                    expect(activePolicies).to.equal(3) // All policies are active initially
+                })
+
+                it("should decrease when policy is claimed", async function () {
+                    const initialActive = await radiShield.getActivePoliciesCount()
+
+                    // Claim one policy
+                    await radiShield.emergencyPayout(
+                        policyIds[0],
+                        ethers.parseUnits("500", 6),
+                        "Test claim",
+                    )
+
+                    const newActive = await radiShield.getActivePoliciesCount()
+                    expect(newActive).to.equal(initialActive - BigInt(1))
+                })
+            })
+
+            describe("getClaimedPoliciesCount", function () {
+                it("should return zero initially", async function () {
+                    const claimedPolicies = await radiShield.getClaimedPoliciesCount()
+                    expect(claimedPolicies).to.equal(0)
+                })
+
+                it("should increment when policy is claimed", async function () {
+                    const initialClaimed = await radiShield.getClaimedPoliciesCount()
+
+                    // Claim one policy
+                    await radiShield.emergencyPayout(
+                        policyIds[0],
+                        ethers.parseUnits("500", 6),
+                        "Test claim",
+                    )
+
+                    const newClaimed = await radiShield.getClaimedPoliciesCount()
+                    expect(newClaimed).to.equal(initialClaimed + BigInt(1))
+                })
+
+                it("should count multiple claimed policies correctly", async function () {
+                    // Claim two policies
+                    await radiShield.emergencyPayout(
+                        policyIds[0],
+                        ethers.parseUnits("500", 6),
+                        "Test claim 1",
+                    )
+                    await radiShield.emergencyPayout(
+                        policyIds[1],
+                        ethers.parseUnits("800", 6),
+                        "Test claim 2",
+                    )
+
+                    const claimedPolicies = await radiShield.getClaimedPoliciesCount()
+                    expect(claimedPolicies).to.equal(2)
+                })
+            })
+
+            describe("getTotalCoverage", function () {
+                it("should return sum of all policy coverages", async function () {
+                    const totalCoverage = await radiShield.getTotalCoverage()
+                    const expectedTotal =
+                        ethers.parseUnits("1000", 6) +
+                        ethers.parseUnits("2000", 6) +
+                        ethers.parseUnits("1500", 6)
+                    expect(totalCoverage).to.equal(expectedTotal)
+                })
+
+                it("should include coverage from new policies", async function () {
+                    const initialTotal = await radiShield.getTotalCoverage()
+                    const newCoverage = ethers.parseUnits("750", 6)
+
+                    // Create new policy
+                    await radiShield
+                        .connect(farmer)
+                        .createPolicy("soy", newCoverage, 30 * 24 * 60 * 60, -6, 41)
+
+                    const newTotal = await radiShield.getTotalCoverage()
+                    expect(newTotal).to.equal(initialTotal + newCoverage)
+                })
+            })
+
+            describe("getTotalPremiums", function () {
+                it("should return sum of all premiums collected", async function () {
+                    const totalPremiums = await radiShield.getTotalPremiums()
+
+                    // Calculate expected total (7% of each coverage)
+                    const coverage1 = ethers.parseUnits("1000", 6)
+                    const coverage2 = ethers.parseUnits("2000", 6)
+                    const coverage3 = ethers.parseUnits("1500", 6)
+
+                    const premium1 = (coverage1 * BigInt(7)) / BigInt(100)
+                    const premium2 = (coverage2 * BigInt(7)) / BigInt(100)
+                    const premium3 = (coverage3 * BigInt(7)) / BigInt(100)
+
+                    const expectedTotal = premium1 + premium2 + premium3
+                    expect(totalPremiums).to.equal(expectedTotal)
+                })
+            })
+
+            describe("getContractStats", function () {
+                it("should return comprehensive contract statistics", async function () {
+                    const stats = await radiShield.getContractStats()
+
+                    expect(stats.totalPolicies).to.equal(3)
+                    expect(stats.activePolicies).to.equal(3)
+                    expect(stats.claimedPolicies).to.equal(0)
+                    expect(stats.totalCoverage).to.equal(
+                        ethers.parseUnits("1000", 6) +
+                            ethers.parseUnits("2000", 6) +
+                            ethers.parseUnits("1500", 6),
+                    )
+                    expect(stats.contractBalance).to.be.gt(0) // Should have USDC from premiums
+                })
+
+                it("should update statistics after policy claims", async function () {
+                    // Claim one policy
+                    await radiShield.emergencyPayout(
+                        policyIds[0],
+                        ethers.parseUnits("500", 6),
+                        "Test claim",
+                    )
+
+                    const stats = await radiShield.getContractStats()
+
+                    expect(stats.totalPolicies).to.equal(3) // Total doesn't change
+                    expect(stats.activePolicies).to.equal(2) // One less active
+                    expect(stats.claimedPolicies).to.equal(1) // One claimed
+                })
+            })
+        })
+    })
 })

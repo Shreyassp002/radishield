@@ -214,17 +214,177 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Get policy details (stub implementation)
+     * @dev Get policy details by ID
+     * @param policyId The policy ID to retrieve
+     * @return policy The complete policy information
      */
     function getPolicy(uint256 policyId) external view override returns (Policy memory) {
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
         return policies[policyId];
     }
 
     /**
-     * @dev Get all policies for a farmer (stub implementation)
+     * @dev Get all policy IDs for a specific farmer
+     * @param farmer The farmer's address
+     * @return policyIds Array of policy IDs owned by the farmer
      */
     function getPoliciesByFarmer(address farmer) external view override returns (uint256[] memory) {
         return farmerPolicies[farmer];
+    }
+
+    /**
+     * @dev Check if a policy is active
+     * @param policyId The policy ID to check
+     * @return isActive True if policy is active, false otherwise
+     */
+    function isPolicyActive(uint256 policyId) external view returns (bool) {
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+        return
+            policies[policyId].isActive &&
+            !policies[policyId].claimed &&
+            block.timestamp <= policies[policyId].endDate;
+    }
+
+    /**
+     * @dev Check if a policy has been claimed
+     * @param policyId The policy ID to check
+     * @return claimed True if policy has been claimed, false otherwise
+     */
+    function isPolicyClaimed(uint256 policyId) external view returns (bool) {
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+        return policies[policyId].claimed;
+    }
+
+    /**
+     * @dev Check if a policy has expired
+     * @param policyId The policy ID to check
+     * @return expired True if policy has expired, false otherwise
+     */
+    function isPolicyExpired(uint256 policyId) external view returns (bool) {
+        if (policies[policyId].id == 0) {
+            revert PolicyNotFound(policyId);
+        }
+        return block.timestamp > policies[policyId].endDate;
+    }
+
+    /**
+     * @dev Get the total number of policies created
+     * @return totalPolicies The total number of policies
+     */
+    function getTotalPolicies() external view returns (uint256) {
+        return nextPolicyId - 1;
+    }
+
+    /**
+     * @dev Get the number of active policies
+     * @return activePolicies The number of currently active policies
+     */
+    function getActivePoliciesCount() external view returns (uint256) {
+        uint256 activeCount = 0;
+        for (uint256 i = 1; i < nextPolicyId; i++) {
+            if (
+                policies[i].isActive &&
+                !policies[i].claimed &&
+                block.timestamp <= policies[i].endDate
+            ) {
+                activeCount++;
+            }
+        }
+        return activeCount;
+    }
+
+    /**
+     * @dev Get the number of claimed policies
+     * @return claimedPolicies The number of policies that have been claimed
+     */
+    function getClaimedPoliciesCount() external view returns (uint256) {
+        uint256 claimedCount = 0;
+        for (uint256 i = 1; i < nextPolicyId; i++) {
+            if (policies[i].claimed) {
+                claimedCount++;
+            }
+        }
+        return claimedCount;
+    }
+
+    /**
+     * @dev Get the total coverage amount across all policies
+     * @return totalCoverage The sum of all policy coverage amounts
+     */
+    function getTotalCoverage() external view returns (uint256) {
+        uint256 totalCoverage = 0;
+        for (uint256 i = 1; i < nextPolicyId; i++) {
+            totalCoverage += policies[i].coverage;
+        }
+        return totalCoverage;
+    }
+
+    /**
+     * @dev Get the total premium collected across all policies
+     * @return totalPremiums The sum of all premiums collected
+     */
+    function getTotalPremiums() external view returns (uint256) {
+        uint256 totalPremiums = 0;
+        for (uint256 i = 1; i < nextPolicyId; i++) {
+            totalPremiums += policies[i].premium;
+        }
+        return totalPremiums;
+    }
+
+    /**
+     * @dev Get contract statistics summary
+     * @return totalPolicies Total number of policies created
+     * @return activePolicies Number of currently active policies
+     * @return claimedPolicies Number of policies that have been claimed
+     * @return totalCoverage Total coverage amount across all policies
+     * @return totalPremiums Total premiums collected
+     * @return contractBalance Current USDC balance of the contract
+     */
+    function getContractStats()
+        external
+        view
+        returns (
+            uint256 totalPolicies,
+            uint256 activePolicies,
+            uint256 claimedPolicies,
+            uint256 totalCoverage,
+            uint256 totalPremiums,
+            uint256 contractBalance
+        )
+    {
+        totalPolicies = nextPolicyId - 1;
+
+        uint256 activeCount = 0;
+        uint256 claimedCount = 0;
+        uint256 totalCov = 0;
+        uint256 totalPrem = 0;
+
+        for (uint256 i = 1; i < nextPolicyId; i++) {
+            if (
+                policies[i].isActive &&
+                !policies[i].claimed &&
+                block.timestamp <= policies[i].endDate
+            ) {
+                activeCount++;
+            }
+            if (policies[i].claimed) {
+                claimedCount++;
+            }
+            totalCov += policies[i].coverage;
+            totalPrem += policies[i].premium;
+        }
+
+        activePolicies = activeCount;
+        claimedPolicies = claimedCount;
+        totalCoverage = totalCov;
+        totalPremiums = totalPrem;
+        contractBalance = usdcToken.balanceOf(address(this));
     }
 
     /**
