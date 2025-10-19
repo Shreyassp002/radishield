@@ -2,12 +2,14 @@ require("dotenv").config();
 const OpenMeteoClient = require("./openMeteoClient");
 const WeatherApiClient = require("./weatherApiClient");
 const WeatherValidator = require("./weatherValidator");
+const Web3Client = require("./web3Client");
 
 class WeatherOracleBot {
   constructor() {
     this.openMeteoClient = new OpenMeteoClient();
     this.weatherApiClient = new WeatherApiClient();
     this.validator = new WeatherValidator();
+    this.web3Client = new Web3Client();
   }
 
   /**
@@ -78,17 +80,89 @@ class WeatherOracleBot {
   }
 
   /**
-   * Test the bot functionality with both APIs and validation
+   * Update weather data on blockchain for given coordinates
+   * @param {number} lat - Latitude
+   * @param {number} lon - Longitude
+   * @returns {Object} Update result
+   */
+  async updateWeatherOnChain(lat, lon) {
+    try {
+      console.log(`\n=== Updating Weather Data on Blockchain ===`);
+      console.log(`Coordinates: ${lat}, ${lon}`);
+
+      // Initialize Web3 client if not already done
+      if (!this.web3Client.initialized) {
+        await this.web3Client.initialize();
+      }
+
+      // Check if data is already fresh on blockchain
+      const isFresh = await this.web3Client.isDataFresh(lat, lon, 3600); // 1 hour freshness
+      if (isFresh) {
+        console.log("✅ Weather data is already fresh on blockchain");
+        const existingData = await this.web3Client.getWeatherData(lat, lon);
+        return {
+          success: true,
+          updated: false,
+          reason: "Data already fresh",
+          data: existingData,
+        };
+      }
+
+      // Fetch fresh weather data from APIs
+      const weatherData = await this.fetchWeatherData(lat, lon);
+
+      // Update blockchain with fresh data
+      const updateResult = await this.web3Client.updateWeatherData(
+        lat,
+        lon,
+        weatherData
+      );
+
+      console.log("✅ Weather data successfully updated on blockchain");
+      return {
+        success: true,
+        updated: true,
+        blockchain: updateResult,
+        weatherData: weatherData,
+      };
+    } catch (error) {
+      console.error(
+        "❌ Failed to update weather data on blockchain:",
+        error.message
+      );
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Test the bot functionality with APIs, validation, and blockchain integration
    */
   async test() {
     try {
-      console.log("🤖 Weather Oracle Bot - Testing Mode");
+      console.log("🤖 Weather Oracle Bot - Full Integration Testing");
 
       // Test coordinate validation
       console.log("\n🧪 Testing coordinate validation...");
       const invalidCoords = this.validator.validateCoordinates(91, 181);
       if (!invalidCoords.isValid) {
         console.log("✅ Coordinate validation working correctly");
+      }
+
+      // Test blockchain connection
+      console.log("\n🔗 Testing blockchain connection...");
+      const blockchainConnected = await this.web3Client.testConnection();
+      console.log(
+        blockchainConnected
+          ? "✅ Blockchain connected"
+          : "❌ Blockchain connection failed"
+      );
+
+      if (!blockchainConnected) {
+        console.log("❌ Cannot proceed without blockchain connection");
+        return;
       }
 
       // Test Open-Meteo connection
@@ -115,18 +189,32 @@ class WeatherOracleBot {
       }
 
       // Test with sample coordinates (New York)
-      console.log("\n🌍 Testing with sample coordinates (New York)...");
-      const weatherData = await this.fetchWeatherData(40.7128, -74.006);
-
-      console.log("\n📊 Weather Data Results:");
-      console.log(`30-day rainfall: ${weatherData.rainfall30d}mm`);
-      console.log(`24-hour rainfall: ${weatherData.rainfall24h}mm`);
-      console.log(`Temperature: ${weatherData.temperature}°C`);
       console.log(
-        `Timestamp: ${new Date(weatherData.timestamp).toISOString()}`
+        "\n🌍 Testing full workflow with sample coordinates (New York)..."
       );
-      console.log(`Source: ${weatherData.source}`);
-      console.log(`Validated: ${weatherData.isValid}`);
+      const updateResult = await this.updateWeatherOnChain(40.7128, -74.006);
+
+      if (updateResult.success) {
+        console.log("\n📊 Update Results:");
+        console.log(`Updated: ${updateResult.updated}`);
+        if (updateResult.updated) {
+          console.log(`Transaction Hash: ${updateResult.blockchain.txHash}`);
+          console.log(`Block Number: ${updateResult.blockchain.blockNumber}`);
+          console.log(`Gas Used: ${updateResult.blockchain.gasUsed}`);
+        }
+        if (updateResult.weatherData) {
+          console.log(
+            `30-day rainfall: ${updateResult.weatherData.rainfall30d}mm`
+          );
+          console.log(
+            `24-hour rainfall: ${updateResult.weatherData.rainfall24h}mm`
+          );
+          console.log(`Temperature: ${updateResult.weatherData.temperature}°C`);
+          console.log(`Source: ${updateResult.weatherData.source}`);
+        }
+      } else {
+        console.log(`❌ Update failed: ${updateResult.error}`);
+      }
 
       // Test with invalid coordinates
       console.log("\n🧪 Testing error handling with invalid coordinates...");
@@ -137,9 +225,9 @@ class WeatherOracleBot {
         console.log("✅ Invalid coordinates properly rejected");
       }
 
-      console.log("\n✅ Bot test completed successfully!");
+      console.log("\n✅ Full integration test completed!");
     } catch (error) {
-      console.error("\n❌ Bot test failed:", error.message);
+      console.error("\n❌ Integration test failed:", error.message);
     }
   }
 }
