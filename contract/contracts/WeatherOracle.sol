@@ -3,13 +3,14 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./interfaces/IWeatherOracle.sol";
 
 /**
  * @title WeatherOracle
  * @dev Custom weather oracle contract that stores and provides weather data on-chain
  * Replaces Chainlink oracle dependency with a custom solution for RadiShield
  */
-contract WeatherOracle is Ownable, ReentrancyGuard {
+contract WeatherOracle is IWeatherOracle, Ownable, ReentrancyGuard {
     // Custom Errors for better error handling
     error InvalidCoordinates(int256 lat, int256 lon);
     error InvalidWeatherData(uint256 rainfall30d, uint256 rainfall24h, uint256 temperature);
@@ -19,14 +20,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
     error ZeroAddress();
     error InvalidTimestamp(uint256 timestamp);
 
-    // Weather data structure
-    struct WeatherData {
-        uint256 rainfall30d; // Total rainfall in last 30 days (mm)
-        uint256 rainfall24h; // Total rainfall in last 24 hours (mm)
-        uint256 temperature; // Current temperature (Celsius * 100 for decimals)
-        uint256 timestamp; // Unix timestamp of data collection
-        bool isValid; // Data validation flag
-    }
+    // Using WeatherData struct from interface
 
     // State variables
     mapping(bytes32 => WeatherData) private weatherDataByLocation;
@@ -40,24 +34,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
     uint256 public constant MAX_TEMPERATURE = 10000; // 100°C * 100 (for decimals)
     uint256 public constant MIN_TEMPERATURE = 0; // -100°C * 100 (stored as 0, actual -100)
 
-    // Events
-    event WeatherDataUpdated(
-        int256 indexed latitude,
-        int256 indexed longitude,
-        uint256 rainfall30d,
-        uint256 rainfall24h,
-        uint256 temperature,
-        uint256 timestamp
-    );
-
-    event WeatherDataRequested(
-        int256 indexed latitude,
-        int256 indexed longitude,
-        address indexed requester
-    );
-
-    event OracleAuthorized(address indexed oracle);
-    event OracleRevoked(address indexed oracle);
+    // Events are defined in the interface
 
     /**
      * @dev Constructor initializes the contract with owner
@@ -88,7 +65,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
         int256 latitude,
         int256 longitude,
         WeatherData memory data
-    ) external onlyAuthorizedOracle nonReentrant {
+    ) external override onlyAuthorizedOracle nonReentrant {
         // Validate GPS coordinates
         _validateCoordinates(latitude, longitude);
 
@@ -126,7 +103,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
     function getWeatherData(
         int256 latitude,
         int256 longitude
-    ) external view returns (WeatherData memory) {
+    ) external view override returns (WeatherData memory) {
         // Validate GPS coordinates
         _validateCoordinates(latitude, longitude);
 
@@ -155,7 +132,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
         int256 latitude,
         int256 longitude,
         uint256 maxAge
-    ) external view returns (bool) {
+    ) external view override returns (bool) {
         // Validate GPS coordinates
         _validateCoordinates(latitude, longitude);
 
@@ -180,7 +157,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
      * @param latitude GPS latitude (scaled by 10000)
      * @param longitude GPS longitude (scaled by 10000)
      */
-    function requestWeatherData(int256 latitude, int256 longitude) external {
+    function requestWeatherData(int256 latitude, int256 longitude) external override {
         // Validate GPS coordinates
         _validateCoordinates(latitude, longitude);
 
@@ -192,7 +169,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
      * @dev Authorize an oracle address to update weather data
      * @param oracle Address to authorize as oracle
      */
-    function authorizeOracle(address oracle) external onlyOwner {
+    function authorizeOracle(address oracle) external override onlyOwner {
         if (oracle == address(0)) {
             revert ZeroAddress();
         }
@@ -205,7 +182,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
      * @dev Revoke oracle authorization
      * @param oracle Address to revoke oracle authorization from
      */
-    function revokeOracle(address oracle) external onlyOwner {
+    function revokeOracle(address oracle) external override onlyOwner {
         if (oracle == address(0)) {
             revert ZeroAddress();
         }
@@ -219,7 +196,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
      * @param oracle Address to check
      * @return True if address is authorized oracle
      */
-    function isAuthorizedOracle(address oracle) external view returns (bool) {
+    function isAuthorizedOracle(address oracle) external view override returns (bool) {
         return authorizedOracles[oracle];
     }
 
@@ -229,7 +206,10 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
      * @param longitude GPS longitude (scaled by 10000)
      * @return Last update timestamp
      */
-    function getLastUpdateTime(int256 latitude, int256 longitude) external view returns (uint256) {
+    function getLastUpdateTime(
+        int256 latitude,
+        int256 longitude
+    ) external view override returns (uint256) {
         // Validate GPS coordinates
         _validateCoordinates(latitude, longitude);
 
@@ -291,7 +271,10 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
      * @param longitude GPS longitude (scaled by 10000)
      * @return Location hash
      */
-    function getLocationHash(int256 latitude, int256 longitude) external pure returns (bytes32) {
+    function getLocationHash(
+        int256 latitude,
+        int256 longitude
+    ) external pure override returns (bytes32) {
         return keccak256(abi.encodePacked(latitude, longitude));
     }
 
@@ -305,7 +288,7 @@ contract WeatherOracle is Ownable, ReentrancyGuard {
         int256[] calldata latitudes,
         int256[] calldata longitudes,
         WeatherData[] calldata weatherDataArray
-    ) external onlyAuthorizedOracle nonReentrant {
+    ) external override onlyAuthorizedOracle nonReentrant {
         // Validate array lengths match
         require(
             latitudes.length == longitudes.length && longitudes.length == weatherDataArray.length,

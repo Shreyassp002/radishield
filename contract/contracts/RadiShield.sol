@@ -4,16 +4,14 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@chainlink/contracts/src/v0.8/operatorforwarder/ChainlinkClient.sol";
-import "@chainlink/contracts/src/v0.8/operatorforwarder/Chainlink.sol";
-import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 import "./interfaces/IRadiShield.sol";
+import "./interfaces/IWeatherOracle.sol";
 
 /**
  * @title RadiShield
  * @dev Parametric crop insurance contract using Chainlink oracles for weather data
  */
-contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
+contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     // Custom Errors for better error handling
     error InsufficientPremium(uint256 required, uint256 provided);
     error PolicyNotFound(uint256 policyId);
@@ -55,20 +53,15 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
 
     // State variables for contract configuration
     IERC20 public immutable usdcToken;
-    address public immutable oracle;
-    bytes32 public immutable jobId;
-    LinkTokenInterface public immutable linkToken;
+    IWeatherOracle public immutable weatherOracle;
 
     // Policy management
     uint256 private nextPolicyId = 1;
     mapping(uint256 => Policy) public policies;
     mapping(address => uint256[]) public farmerPolicies;
-    mapping(bytes32 => uint256) private requestToPolicy;
-    mapping(uint256 => WeatherData) private policyWeatherData;
 
     // Constants
     uint256 public constant BASE_PREMIUM_RATE = 700; // 7% in basis points (7% = 700/10000)
-    uint256 public constant ORACLE_FEE = 0.1 * 10 ** 18; // 0.1 LINK
 
     uint256 public constant DROUGHT_THRESHOLD = 50; // mm in 30 days
     uint256 public constant FLOOD_THRESHOLD = 100; // mm in 24 hours
@@ -92,36 +85,18 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     /**
      * @dev Constructor initializes the contract with required addresses and parameters
      * @param _usdcToken Address of the USDC token contract
-     * @param _linkToken Address of the LINK token contract
-     * @param _oracle Address of the Chainlink oracle
-     * @param _jobId Job ID for the Chainlink AccuWeather oracle
+     * @param _weatherOracle Address of the Weather Oracle contract
      */
-    constructor(
-        address _usdcToken,
-        address _linkToken,
-        address _oracle,
-        bytes32 _jobId
-    ) Ownable(msg.sender) {
+    constructor(address _usdcToken, address _weatherOracle) Ownable(msg.sender) {
         if (_usdcToken == address(0)) {
             revert InvalidTokenAddress(_usdcToken);
         }
-        if (_linkToken == address(0)) {
-            revert InvalidTokenAddress(_linkToken);
-        }
-        if (_oracle == address(0)) {
-            revert InvalidOracleAddress(_oracle);
-        }
-        if (_jobId == bytes32(0)) {
-            revert InvalidJobId(_jobId);
+        if (_weatherOracle == address(0)) {
+            revert InvalidOracleAddress(_weatherOracle);
         }
 
         usdcToken = IERC20(_usdcToken);
-        linkToken = LinkTokenInterface(_linkToken);
-        oracle = _oracle;
-        jobId = _jobId;
-
-        _setChainlinkToken(_linkToken);
-        _setChainlinkOracle(_oracle);
+        weatherOracle = IWeatherOracle(_weatherOracle);
     }
 
     // Implementation functions will be added in subsequent tasks
@@ -528,11 +503,11 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Request weather data from Chainlink oracle for a specific policy
+     * @dev Request weather data from Weather Oracle for a specific policy
      * @param policyId The policy ID to request weather data for
-     * @return requestId The Chainlink request ID for tracking
+     * @return success True if data was available immediately, false if update was requested
      */
-    function requestWeatherData(uint256 policyId) external whenNotPaused returns (bytes32) {
+    function requestWeatherData(uint256 policyId) external whenNotPaused returns (bool) {
         // Input validation for policy ID
         if (policyId == 0) {
             revert ZeroValue();
@@ -558,99 +533,41 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
             revert PolicyExpired(policyId);
         }
 
-        // Check contract has sufficient LINK balance for oracle fee
-        uint256 linkBalance = linkToken.balanceOf(address(this));
-        if (linkBalance < ORACLE_FEE) {
-            revert InsufficientContractBalance(ORACLE_FEE, linkBalance);
-        }
+        Policy memory policy = policies[policyId];
 
-        bytes32 requestId;
-
-        // For testing with mock oracle, generate a mock request ID
-        if (oracle == address(0x1234567890123456789012345678901234567890)) {
-            requestId = keccak256(abi.encodePacked(policyId, block.timestamp, msg.sender));
-        } else {
-            // Validate oracle address is not zero
-            if (oracle == address(0)) {
-                revert InvalidOracleAddress(oracle);
-            }
-
-            // Validate job ID is not zero
-            if (jobId == bytes32(0)) {
-                revert InvalidJobId(jobId);
-            }
-
-            // Create Chainlink request for real oracle
-            Chainlink.Request memory request = _buildChainlinkRequest(
-                jobId,
-                address(this),
-                this.fulfillWeatherData.selector
+        // Check if fresh data exists in Weather Oracle
+        if (weatherOracle.isDataFresh(policy.latitude, policy.longitude, 24 hours)) {
+            // Use existing fresh data immediately
+            IWeatherOracle.WeatherData memory data = weatherOracle.getWeatherData(
+                policy.latitude,
+                policy.longitude
             );
-
-            // Convert coordinates to strings for oracle parameters
-            string memory latStr = _int2str(policies[policyId].latitude);
-            string memory lonStr = _int2str(policies[policyId].longitude);
-
-            // Add latitude and longitude parameters to the request
-            Chainlink._add(request, "lat", latStr);
-            Chainlink._add(request, "lon", lonStr);
-
-            // Send the request and pay the oracle fee
-            requestId = _sendChainlinkRequest(request, ORACLE_FEE);
+            _processWeatherData(policyId, data);
+            return true;
         }
 
-        // Validate request ID was generated
-        if (requestId == bytes32(0)) {
-            revert OracleRequestFailed(requestId);
-        }
-
-        // Check if request ID already exists (prevent duplicate requests)
-        if (requestToPolicy[requestId] != 0) {
-            revert OracleRequestFailed(requestId);
-        }
-
-        // Map request ID to policy ID for callback handling
-        requestToPolicy[requestId] = policyId;
+        // Request fresh data from Weather Oracle (triggers oracle bot)
+        weatherOracle.requestWeatherData(policy.latitude, policy.longitude);
 
         // Emit event for weather data request
-        emit WeatherDataRequested(policyId, requestId);
+        emit WeatherDataRequested(policyId, bytes32(0));
 
-        return requestId;
+        return false;
     }
 
     /**
-     * @dev Chainlink callback function to receive weather data
-     * @param requestId The request ID that was returned from requestWeatherData
-     * @param rainfall30d Rainfall in the last 30 days (in mm)
-     * @param rainfall24h Rainfall in the last 24 hours (in mm)
-     * @param temperature Current temperature (in Celsius)
+     * @dev Process weather data for a specific policy from Weather Oracle
+     * @param policyId The policy ID to process weather data for
      */
-    function fulfillWeatherData(
-        bytes32 requestId,
-        uint256 rainfall30d,
-        uint256 rainfall24h,
-        uint256 temperature
-    ) external recordChainlinkFulfillment(requestId) {
-        // Validate request ID
-        if (requestId == bytes32(0)) {
-            revert OracleRequestFailed(requestId);
-        }
-
-        // Get the policy ID associated with this request
-        uint256 policyId = requestToPolicy[requestId];
-
-        // Validate that we have a valid policy for this request
+    function processWeatherData(uint256 policyId) external whenNotPaused {
+        // Input validation for policy ID
         if (policyId == 0) {
-            revert OracleRequestFailed(requestId);
+            revert ZeroValue();
         }
 
+        // Check if policy exists
         if (policies[policyId].id == 0) {
             revert PolicyNotFound(policyId);
-        }
-
-        // Validate weather data ranges (basic sanity checks)
-        if (rainfall30d > 10000 || rainfall24h > 1000 || temperature > 100) {
-            revert InvalidWeatherData(rainfall30d, rainfall24h, temperature);
         }
 
         // Check if policy is still active and not claimed
@@ -662,23 +579,46 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
             revert PolicyAlreadyClaimed(policyId);
         }
 
-        // Store weather data for the policy
-        policyWeatherData[policyId] = WeatherData({
-            rainfall30d: rainfall30d,
-            rainfall24h: rainfall24h,
-            temperature: temperature,
-            timestamp: block.timestamp,
-            isValid: true
-        });
+        Policy memory policy = policies[policyId];
+
+        // Get weather data from Weather Oracle
+        IWeatherOracle.WeatherData memory data = weatherOracle.getWeatherData(
+            policy.latitude,
+            policy.longitude
+        );
+
+        // Validate that we have valid weather data
+        if (!data.isValid) {
+            revert WeatherDataNotAvailable(policyId);
+        }
+
+        _processWeatherData(policyId, data);
+    }
+
+    /**
+     * @dev Internal function to process weather data and check triggers
+     * @param policyId The policy ID to process
+     * @param data The weather data from the oracle
+     */
+    function _processWeatherData(
+        uint256 policyId,
+        IWeatherOracle.WeatherData memory data
+    ) internal {
+        // Validate weather data ranges (basic sanity checks)
+        if (data.rainfall30d > 10000 || data.rainfall24h > 1000 || data.temperature > 10000) {
+            revert InvalidWeatherData(data.rainfall30d, data.rainfall24h, data.temperature);
+        }
 
         // Emit event for weather data received
-        emit WeatherDataReceived(policyId, rainfall30d, rainfall24h, temperature);
-
-        // Clean up the request mapping
-        delete requestToPolicy[requestId];
+        emit WeatherDataReceived(policyId, data.rainfall30d, data.rainfall24h, data.temperature);
 
         // Check weather triggers and process payout if conditions are met
-        _checkWeatherTriggersAndPayout(policyId, rainfall30d, rainfall24h, temperature);
+        _checkWeatherTriggersAndPayout(
+            policyId,
+            data.rainfall30d,
+            data.rainfall24h,
+            data.temperature / 100
+        );
     }
 
     /**
@@ -1011,110 +951,19 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Emergency withdraw LINK from contract (only owner)
-     * @param amount Amount of LINK to withdraw
-     * @param recipient Address to receive the LINK
-     */
-    function emergencyWithdrawLink(uint256 amount, address recipient) external onlyOwner {
-        if (recipient == address(0)) {
-            revert InvalidRecipient(recipient);
-        }
-        if (amount == 0) {
-            revert ZeroValue();
-        }
-
-        uint256 contractBalance = linkToken.balanceOf(address(this));
-        if (contractBalance < amount) {
-            revert InsufficientContractBalance(amount, contractBalance);
-        }
-
-        bool success = linkToken.transfer(recipient, amount);
-        if (!success) {
-            revert TransferFailed();
-        }
-    }
-
-    /**
-     * @dev Get weather data for a specific policy
+     * @dev Get weather data for a specific policy from Weather Oracle
      * @param policyId The policy ID to get weather data for
      * @return The weather data struct for the policy
      */
-    function getWeatherData(uint256 policyId) external view returns (WeatherData memory) {
-        return policyWeatherData[policyId];
-    }
-
-    /**
-     * @dev Get contract's LINK balance
-     * @return balance The contract's LINK balance
-     */
-    function getLinkBalance() external view returns (uint256) {
-        return linkToken.balanceOf(address(this));
-    }
-
-    /**
-     * @dev Test function to simulate oracle callback (only for testing with mock oracle)
-     * @param requestId The request ID that was returned from requestWeatherData
-     * @param rainfall30d Rainfall in the last 30 days (in mm)
-     * @param rainfall24h Rainfall in the last 24 hours (in mm)
-     * @param temperature Current temperature (in Celsius)
-     */
-    function testFulfillWeatherData(
-        bytes32 requestId,
-        uint256 rainfall30d,
-        uint256 rainfall24h,
-        uint256 temperature
-    ) external {
-        // Only allow this function to be called when using mock oracle for testing
-        require(oracle == address(0x1234567890123456789012345678901234567890), "Only for testing");
-
-        // Validate request ID
-        if (requestId == bytes32(0)) {
-            revert OracleRequestFailed(requestId);
-        }
-
-        // Get the policy ID associated with this request
-        uint256 policyId = requestToPolicy[requestId];
-
-        // Validate that we have a valid policy for this request
-        if (policyId == 0) {
-            revert OracleRequestFailed(requestId);
-        }
-
+    function getWeatherData(
+        uint256 policyId
+    ) external view returns (IWeatherOracle.WeatherData memory) {
         if (policies[policyId].id == 0) {
             revert PolicyNotFound(policyId);
         }
 
-        // Validate weather data ranges (basic sanity checks)
-        if (rainfall30d > 10000 || rainfall24h > 1000 || temperature > 100) {
-            revert InvalidWeatherData(rainfall30d, rainfall24h, temperature);
-        }
-
-        // Check if policy is still active and not claimed
-        if (!policies[policyId].isActive) {
-            revert PolicyNotActive(policyId);
-        }
-
-        if (policies[policyId].claimed) {
-            revert PolicyAlreadyClaimed(policyId);
-        }
-
-        // Store weather data for the policy
-        policyWeatherData[policyId] = WeatherData({
-            rainfall30d: rainfall30d,
-            rainfall24h: rainfall24h,
-            temperature: temperature,
-            timestamp: block.timestamp,
-            isValid: true
-        });
-
-        // Emit event for weather data received
-        emit WeatherDataReceived(policyId, rainfall30d, rainfall24h, temperature);
-
-        // Clean up the request mapping
-        delete requestToPolicy[requestId];
-
-        // Check weather triggers and process payout if conditions are met
-        _checkWeatherTriggersAndPayout(policyId, rainfall30d, rainfall24h, temperature);
+        Policy memory policy = policies[policyId];
+        return weatherOracle.getWeatherData(policy.latitude, policy.longitude);
     }
 
     /**
@@ -1180,20 +1029,11 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Handle oracle timeout by allowing manual weather data input
+     * @dev Handle oracle timeout by allowing manual weather data processing
      * @param policyId The policy ID that had oracle timeout
-     * @param rainfall30d Manual rainfall data for 30 days
-     * @param rainfall24h Manual rainfall data for 24 hours
-     * @param temperature Manual temperature data
      * @param reason Reason for manual intervention
      */
-    function handleOracleTimeout(
-        uint256 policyId,
-        uint256 rainfall30d,
-        uint256 rainfall24h,
-        uint256 temperature,
-        string memory reason
-    ) external onlyOwner {
+    function handleOracleTimeout(uint256 policyId, string memory reason) external onlyOwner {
         // Input validation
         if (policyId == 0) {
             revert ZeroValue();
@@ -1217,50 +1057,17 @@ contract RadiShield is IRadiShield, ChainlinkClient, ReentrancyGuard, Ownable {
             revert PolicyAlreadyClaimed(policyId);
         }
 
-        // Validate weather data ranges
-        if (rainfall30d > 10000 || rainfall24h > 1000 || temperature > 100) {
-            revert InvalidWeatherData(rainfall30d, rainfall24h, temperature);
+        // Process weather data from oracle (even if stale)
+        Policy memory policy = policies[policyId];
+        IWeatherOracle.WeatherData memory data = weatherOracle.getWeatherData(
+            policy.latitude,
+            policy.longitude
+        );
+
+        if (data.isValid) {
+            _processWeatherData(policyId, data);
+        } else {
+            revert WeatherDataNotAvailable(policyId);
         }
-
-        // Store weather data for the policy
-        policyWeatherData[policyId] = WeatherData({
-            rainfall30d: rainfall30d,
-            rainfall24h: rainfall24h,
-            temperature: temperature,
-            timestamp: block.timestamp,
-            isValid: true
-        });
-
-        // Emit event for weather data received
-        emit WeatherDataReceived(policyId, rainfall30d, rainfall24h, temperature);
-
-        // Check weather triggers and process payout if conditions are met
-        _checkWeatherTriggersAndPayout(policyId, rainfall30d, rainfall24h, temperature);
-    }
-
-    /**
-     * @dev Cancel a pending oracle request due to timeout
-     * @param requestId The request ID to cancel
-     * @param policyId The associated policy ID
-     */
-    function cancelOracleRequest(bytes32 requestId, uint256 policyId) external onlyOwner {
-        // Input validation
-        if (requestId == bytes32(0)) {
-            revert OracleRequestFailed(requestId);
-        }
-        if (policyId == 0) {
-            revert ZeroValue();
-        }
-
-        // Verify the request exists and matches the policy
-        if (requestToPolicy[requestId] != policyId) {
-            revert OracleRequestFailed(requestId);
-        }
-
-        // Clean up the request mapping
-        delete requestToPolicy[requestId];
-
-        // Emit timeout event
-        emit WeatherDataRequested(policyId, requestId); // Reusing event for tracking
     }
 }
