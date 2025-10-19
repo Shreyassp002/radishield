@@ -9,7 +9,7 @@ import "./interfaces/IWeatherOracle.sol";
 
 /**
  * @title RadiShield
- * @dev Parametric crop insurance contract using Chainlink oracles for weather data
+ * @dev Parametric crop insurance contract using custom Weather Oracle for weather data
  */
 contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     // Custom Errors for better error handling
