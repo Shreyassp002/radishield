@@ -1,5 +1,17 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
+require("dotenv").config()
+
+// Helper function to get deployed WeatherOracle address
+function getWeatherOracleAddress() {
+    try {
+        const deployment = require("../deployments/polygonAmoy/WeatherOracle.json")
+        return deployment.address
+    } catch (error) {
+        console.log("⚠️ Could not read deployment file, using fallback address")
+        return "0x300B53C6D1B4Bff74e30680c6bE49161C96Ab531"
+    }
+}
 
 describe("Working Insurance System Test", function () {
     let weatherOracle
@@ -8,8 +20,7 @@ describe("Working Insurance System Test", function () {
     let deployer
     let farmer
 
-    // Your deployed WeatherOracle address
-    const WEATHER_ORACLE_ADDRESS = "0x36E4f5F0C95D31F9f280CB607796212E2B0b71AF"
+    const WEATHER_ORACLE_ADDRESS = getWeatherOracleAddress()
 
     // Test location with confirmed drought data (Lagos, Nigeria)
     const LAGOS_LAT = 65244 // 6.5244 * 10000
@@ -20,39 +31,60 @@ describe("Working Insurance System Test", function () {
 
         const signers = await ethers.getSigners()
         deployer = signers[0]
-        farmer = signers[0] // Use same wallet for simplicity
+
+        // Create farmer from private key if provided
+        if (
+            process.env.FARMER_PRIVATE_KEY &&
+            process.env.FARMER_PRIVATE_KEY !== "your_farmer_testnet_private_key_here"
+        ) {
+            farmer = new ethers.Wallet(process.env.FARMER_PRIVATE_KEY, ethers.provider)
+            console.log(`🌾 Using testnet farmer account: ${farmer.address}`)
+        } else {
+            farmer = deployer // Use deployer for local testing
+            console.log("🧪 Using deployer account as farmer for local testing")
+        }
 
         console.log(`Deployer: ${deployer.address}`)
         console.log(`Farmer: ${farmer.address}`)
 
-        // Check balance
+        // Check balances
         const deployerBalance = await ethers.provider.getBalance(deployer.address)
-        console.log(`Wallet balance: ${ethers.formatEther(deployerBalance)} MATIC`)
+        const farmerBalance = await ethers.provider.getBalance(farmer.address)
+        console.log(`Deployer balance: ${ethers.formatEther(deployerBalance)} POL`)
+        console.log(`Farmer balance: ${ethers.formatEther(farmerBalance)} POL`)
+
+        if (farmerBalance < ethers.parseEther("0.1")) {
+            console.log(
+                "⚠️ Warning: Farmer account has low POL balance. Get POL from faucet: https://faucet.polygon.technology/",
+            )
+        }
     })
 
-    it("Should deploy MockUSDC and new RadiShield", async function () {
-        console.log("📋 Deploying MockUSDC and RadiShield...")
+    it("Should deploy RadiShield with POL support", async function () {
+        console.log("📋 Deploying RadiShield with native POL support...")
 
         // Connect to existing WeatherOracle
         const WeatherOracle = await ethers.getContractFactory("WeatherOracle")
         weatherOracle = WeatherOracle.attach(WEATHER_ORACLE_ADDRESS)
         console.log(`✅ Connected to WeatherOracle: ${WEATHER_ORACLE_ADDRESS}`)
 
-        // Deploy MockUSDC
-        const MockUSDC = await ethers.getContractFactory("MockUSDC")
-        mockUSDC = await MockUSDC.deploy()
-        await mockUSDC.waitForDeployment()
-        console.log(`✅ MockUSDC deployed: ${await mockUSDC.getAddress()}`)
-
-        // Deploy new RadiShield with MockUSDC
+        // Deploy RadiShield with WeatherOracle (no USDC needed)
         const RadiShield = await ethers.getContractFactory("RadiShield")
-        radiShield = await RadiShield.deploy(await mockUSDC.getAddress(), WEATHER_ORACLE_ADDRESS)
+        radiShield = await RadiShield.deploy(WEATHER_ORACLE_ADDRESS)
         await radiShield.waitForDeployment()
         console.log(`✅ RadiShield deployed: ${await radiShield.getAddress()}`)
 
-        // Verify deployments
+        // Verify deployment
         expect(await radiShield.getAddress()).to.be.properAddress
-        expect(await mockUSDC.getAddress()).to.be.properAddress
+
+        // Fund contract with POL for payouts (send from deployer)
+        const fundAmount = ethers.parseEther("5") // 5 POL for payouts (reasonable amount)
+        const fundTx = await deployer.sendTransaction({
+            to: await radiShield.getAddress(),
+            value: fundAmount,
+        })
+        await fundTx.wait()
+        console.log(`💰 Funded RadiShield with ${ethers.formatEther(fundAmount)} POL for payouts`)
     })
 
     it("Should verify severe drought conditions", async function () {

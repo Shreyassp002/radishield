@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IRadiShield.sol";
 import "./interfaces/IWeatherOracle.sol";
 
@@ -52,7 +51,6 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     error PolicyNotEligibleForPayout(uint256 policyId, string reason);
 
     // State variables for contract configuration
-    IERC20 public immutable usdcToken;
     IWeatherOracle public immutable weatherOracle;
 
     // Policy management
@@ -63,14 +61,25 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     // Constants
     uint256 public constant BASE_PREMIUM_RATE = 700; // 7% in basis points (7% = 700/10000)
 
-    uint256 public constant DROUGHT_THRESHOLD = 50; // mm in 30 days
-    uint256 public constant FLOOD_THRESHOLD = 100; // mm in 24 hours
-    uint256 public constant HEATWAVE_THRESHOLD = 38; // Celsius
+    uint256 public constant DROUGHT_THRESHOLD = 10; // mm in 30 days
+    uint256 public constant FLOOD_THRESHOLD = 200; // mm in 24 hours
+    uint256 public constant HEATWAVE_THRESHOLD = 50; // Celsius
     uint256 public constant HEATWAVE_PAYOUT_RATE = 75; // 75% payout
-    uint256 public constant MIN_COVERAGE = 100 * 10 ** 6; // $100 USDC minimum
-    uint256 public constant MAX_COVERAGE = 10000 * 10 ** 6; // $10,000 USDC maximum
+    uint256 public constant MIN_COVERAGE = 1 * 10 ** 18; // 1 POL minimum
+    uint256 public constant MAX_COVERAGE = 10 * 10 ** 18; // 10 POL maximum
     uint256 public constant MIN_DURATION = 30 days; // Minimum 30 days
     uint256 public constant MAX_DURATION = 365 days; // Maximum 1 year
+
+    // Geographic restrictions for Africa
+    int256 public constant AFRICA_MIN_LAT = -350000; // -35 degrees (South Africa)
+    int256 public constant AFRICA_MAX_LAT = 370000; // 37 degrees (North Africa)
+    int256 public constant AFRICA_MIN_LON = -180000; // -18 degrees (West Africa)
+    int256 public constant AFRICA_MAX_LON = 520000; // 52 degrees (East Africa)
+
+    // More restrictive weather thresholds to prevent abuse
+    uint256 public constant SEVERE_DROUGHT_THRESHOLD = 5; // mm in 30 days (more restrictive than 50mm)
+    uint256 public constant SEVERE_FLOOD_THRESHOLD = 200; // mm in 24 hours (more restrictive than 100mm)
+    uint256 public constant EXTREME_HEATWAVE_THRESHOLD = 55; // Celsius (more restrictive than 38°C)
 
     // Additional events for comprehensive logging
     event PremiumCalculated(uint256 coverage, int256 lat, int256 lon, uint256 premium);
@@ -84,18 +93,13 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
 
     /**
      * @dev Constructor initializes the contract with required addresses and parameters
-     * @param _usdcToken Address of the USDC token contract
      * @param _weatherOracle Address of the Weather Oracle contract
      */
-    constructor(address _usdcToken, address _weatherOracle) Ownable(msg.sender) {
-        if (_usdcToken == address(0)) {
-            revert InvalidTokenAddress(_usdcToken);
-        }
+    constructor(address _weatherOracle) Ownable(msg.sender) {
         if (_weatherOracle == address(0)) {
             revert InvalidOracleAddress(_weatherOracle);
         }
 
-        usdcToken = IERC20(_usdcToken);
         weatherOracle = IWeatherOracle(_weatherOracle);
     }
 
@@ -117,7 +121,7 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         uint256 duration,
         int256 latitude,
         int256 longitude
-    ) external override whenNotPaused returns (uint256) {
+    ) external payable override whenNotPaused returns (uint256) {
         // Input validation for crop type
         if (bytes(cropType).length == 0) {
             revert InvalidCropType(cropType);
@@ -158,25 +162,31 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
             revert InvalidLocation(scaledLatitude, scaledLongitude);
         }
 
+        // Restrict to African coordinates only
+        if (
+            scaledLatitude < AFRICA_MIN_LAT ||
+            scaledLatitude > AFRICA_MAX_LAT ||
+            scaledLongitude < AFRICA_MIN_LON ||
+            scaledLongitude > AFRICA_MAX_LON
+        ) {
+            revert InvalidLocation(scaledLatitude, scaledLongitude);
+        }
+
         // Calculate premium using the existing calculatePremium function
         uint256 premium = this.calculatePremium(coverage, scaledLatitude, scaledLongitude);
 
-        // Check farmer's USDC balance
-        uint256 farmerBalance = usdcToken.balanceOf(msg.sender);
-        if (farmerBalance < premium) {
-            revert InsufficientBalance(premium, farmerBalance);
+        // Check if farmer sent enough POL to cover premium
+        if (msg.value < premium) {
+            revert InsufficientBalance(premium, msg.value);
         }
 
-        // Check farmer's USDC allowance
-        uint256 allowance = usdcToken.allowance(msg.sender, address(this));
-        if (allowance < premium) {
-            revert InsufficientAllowance(premium, allowance);
-        }
-
-        // Transfer premium from farmer to contract
-        bool success = usdcToken.transferFrom(msg.sender, address(this), premium);
-        if (!success) {
-            revert TransferFailed();
+        // Refund excess POL if any
+        if (msg.value > premium) {
+            uint256 refund = msg.value - premium;
+            (bool refundSuccess, ) = payable(msg.sender).call{value: refund}("");
+            if (!refundSuccess) {
+                revert TransferFailed();
+            }
         }
 
         // Generate unique policy ID
@@ -239,10 +249,20 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
             revert InvalidLocation(latitude, longitude);
         }
 
+        // Restrict to African coordinates only
+        if (
+            latitude < AFRICA_MIN_LAT ||
+            latitude > AFRICA_MAX_LAT ||
+            longitude < AFRICA_MIN_LON ||
+            longitude > AFRICA_MAX_LON
+        ) {
+            revert InvalidLocation(latitude, longitude);
+        }
+
         // Calculate 7% base premium rate
         uint256 premium = (coverage * BASE_PREMIUM_RATE) / 10000;
 
-        // Ensure premium is not zero (should never happen with valid inputs, but safety check)
+        // Ensure premium is not zero
         if (premium == 0) {
             revert InvalidAmount(premium);
         }
@@ -384,7 +404,7 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
      * @return claimedPolicies Number of policies that have been claimed
      * @return totalCoverage Total coverage amount across all policies
      * @return totalPremiums Total premiums collected
-     * @return contractBalance Current USDC balance of the contract
+     * @return contractBalance Current POL balance of the contract
      */
     function getContractStats()
         external
@@ -424,7 +444,7 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         claimedPolicies = claimedCount;
         totalCoverage = totalCov;
         totalPremiums = totalPrem;
-        contractBalance = usdcToken.balanceOf(address(this));
+        contractBalance = address(this).balance;
     }
 
     /**
@@ -474,8 +494,8 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
             revert InvalidAmount(amount);
         }
 
-        // Check contract has sufficient USDC balance for payout
-        uint256 contractBalance = usdcToken.balanceOf(address(this));
+        // Check contract has sufficient POL balance for payout
+        uint256 contractBalance = address(this).balance;
         if (contractBalance < amount) {
             revert InsufficientContractBalance(amount, contractBalance);
         }
@@ -485,7 +505,7 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         policies[policyId].isActive = false;
 
         // Transfer payout to farmer
-        bool success = usdcToken.transfer(recipient, amount);
+        (bool success, ) = payable(recipient).call{value: amount}("");
         if (!success) {
             revert PayoutFailed(amount, recipient);
         }
@@ -495,11 +515,11 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Get contract's USDC balance
-     * @return balance The contract's USDC balance
+     * @dev Get contract's POL balance
+     * @return balance The contract's POL balance
      */
     function getContractBalance() external view returns (uint256) {
-        return usdcToken.balanceOf(address(this));
+        return address(this).balance;
     }
 
     /**
@@ -617,7 +637,7 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
             policyId,
             data.rainfall30d,
             data.rainfall24h,
-            data.temperature / 100
+            data.temperature / 1000
         );
     }
 
@@ -644,20 +664,20 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         uint256 payoutAmount = 0;
         string memory triggerType = "";
 
-        // Check for drought: < 50mm in 30 days (100% payout)
-        if (rainfall30d < DROUGHT_THRESHOLD) {
+        // Check for severe drought: < 25mm in 30 days (100% payout)
+        if (rainfall30d < SEVERE_DROUGHT_THRESHOLD) {
             payoutAmount = policy.coverage;
-            triggerType = "drought";
+            triggerType = "severe_drought";
         }
-        // Check for flood: > 100mm in 24 hours (100% payout)
-        else if (rainfall24h > FLOOD_THRESHOLD) {
+        // Check for severe flood: > 150mm in 24 hours (100% payout)
+        else if (rainfall24h > SEVERE_FLOOD_THRESHOLD) {
             payoutAmount = policy.coverage;
-            triggerType = "flood";
+            triggerType = "severe_flood";
         }
-        // Check for heatwave: > 38°C (75% payout)
-        else if (temperature > HEATWAVE_THRESHOLD) {
+        // Check for extreme heatwave: > 42°C (temperature is already converted to Celsius)
+        else if (temperature > EXTREME_HEATWAVE_THRESHOLD) {
             payoutAmount = (policy.coverage * HEATWAVE_PAYOUT_RATE) / 100;
-            triggerType = "heatwave";
+            triggerType = "extreme_heatwave";
         }
 
         // Process payout if trigger conditions are met
@@ -906,14 +926,14 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
                 }
 
                 // Check contract has sufficient balance
-                uint256 contractBalance = usdcToken.balanceOf(address(this));
+                uint256 contractBalance = address(this).balance;
                 if (contractBalance >= amount) {
                     // Update policy status
                     policies[policyId].claimed = true;
                     policies[policyId].isActive = false;
 
                     // Transfer payout
-                    bool success = usdcToken.transfer(policies[policyId].farmer, amount);
+                    (bool success, ) = payable(policies[policyId].farmer).call{value: amount}("");
                     if (success) {
                         emit ClaimPaid(policyId, policies[policyId].farmer, amount, reason);
                     } else {
@@ -927,9 +947,9 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
     }
 
     /**
-     * @dev Emergency withdraw USDC from contract (only owner)
-     * @param amount Amount of USDC to withdraw
-     * @param recipient Address to receive the USDC
+     * @dev Emergency withdraw POL from contract (only owner)
+     * @param amount Amount of POL to withdraw
+     * @param recipient Address to receive the POL
      */
     function emergencyWithdraw(uint256 amount, address recipient) external onlyOwner {
         if (recipient == address(0)) {
@@ -939,12 +959,12 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
             revert ZeroValue();
         }
 
-        uint256 contractBalance = usdcToken.balanceOf(address(this));
+        uint256 contractBalance = address(this).balance;
         if (contractBalance < amount) {
             revert InsufficientContractBalance(amount, contractBalance);
         }
 
-        bool success = usdcToken.transfer(recipient, amount);
+        (bool success, ) = payable(recipient).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }
@@ -1008,8 +1028,8 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
             revert InvalidAmount(amount);
         }
 
-        // Check contract has sufficient USDC balance for payout
-        uint256 contractBalance = usdcToken.balanceOf(address(this));
+        // Check contract has sufficient POL balance for payout
+        uint256 contractBalance = address(this).balance;
         if (contractBalance < amount) {
             revert InsufficientContractBalance(amount, contractBalance);
         }
@@ -1019,7 +1039,7 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         policies[policyId].isActive = false;
 
         // Transfer payout to farmer
-        bool success = usdcToken.transfer(policies[policyId].farmer, amount);
+        (bool success, ) = payable(policies[policyId].farmer).call{value: amount}("");
         if (!success) {
             revert PayoutFailed(amount, policies[policyId].farmer);
         }
@@ -1069,5 +1089,34 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         } else {
             revert WeatherDataNotAvailable(policyId);
         }
+    }
+
+    /**
+     * @dev Check if coordinates are within Africa bounds
+     * @param latitude Latitude scaled by 10000
+     * @param longitude Longitude scaled by 10000
+     * @return isInAfrica True if coordinates are within Africa
+     */
+    function isLocationInAfrica(int256 latitude, int256 longitude) external pure returns (bool) {
+        return (latitude >= AFRICA_MIN_LAT &&
+            latitude <= AFRICA_MAX_LAT &&
+            longitude >= AFRICA_MIN_LON &&
+            longitude <= AFRICA_MAX_LON);
+    }
+
+    /**
+     * @dev Receive function to accept POL deposits for contract funding
+     * This allows direct POL transfers to fund the contract for payouts
+     */
+    receive() external payable {
+        // Contract can receive POL for funding payouts
+        // No additional logic needed - just accept the POL
+    }
+
+    /**
+     * @dev Fallback function to handle any other calls
+     */
+    fallback() external payable {
+        // Fallback to receive function behavior
     }
 }

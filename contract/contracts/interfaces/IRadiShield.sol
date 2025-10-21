@@ -48,7 +48,7 @@ interface IRadiShield {
         uint256 duration,
         int256 latitude,
         int256 longitude
-    ) external returns (uint256);
+    ) external payable returns (uint256);
 
     function calculatePremium(
         uint256 coverage,

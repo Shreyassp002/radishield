@@ -31,8 +31,8 @@ contract WeatherOracle is IWeatherOracle, Ownable, ReentrancyGuard {
     uint256 public constant DATA_FRESHNESS_THRESHOLD = 24 hours; // 24 hours in seconds
     uint256 public constant MAX_RAINFALL_30D = 10000; // mm
     uint256 public constant MAX_RAINFALL_24H = 1000; // mm
-    uint256 public constant MAX_TEMPERATURE = 10000; // 100°C * 100 (for decimals)
-    uint256 public constant MIN_TEMPERATURE = 0; // -100°C * 100 (stored as 0, actual -100)
+    uint256 public constant MAX_TEMPERATURE = 100000; // 100°C * 1000 (for decimals, bot format)
+    uint256 public constant MIN_TEMPERATURE = 0; // -100°C * 1000 (stored as 0, actual -100)
 
     // Events are defined in the interface
 
@@ -244,7 +244,7 @@ contract WeatherOracle is IWeatherOracle, Ownable, ReentrancyGuard {
             revert InvalidWeatherData(data.rainfall30d, data.rainfall24h, data.temperature);
         }
 
-        // Validate temperature range (0 to 10000 represents -100°C to 100°C)
+        // Validate temperature range (0 to 100000 represents -100°C to 100°C, scaled by 1000)
         if (data.temperature > MAX_TEMPERATURE) {
             revert InvalidWeatherData(data.rainfall30d, data.rainfall24h, data.temperature);
         }

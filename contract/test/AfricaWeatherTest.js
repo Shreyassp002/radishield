@@ -2,11 +2,22 @@ const { expect } = require("chai")
 const { ethers } = require("hardhat")
 const axios = require("axios")
 
+// Helper function to get deployed WeatherOracle address
+function getWeatherOracleAddress() {
+    try {
+        const deployment = require("../deployments/polygonAmoy/WeatherOracle.json")
+        return deployment.address
+    } catch (error) {
+        console.log("⚠️ Could not read deployment file, using fallback address")
+        return "0x300B53C6D1B4Bff74e30680c6bE49161C96Ab531"
+    }
+}
+
 describe("Africa Weather Data Test", function () {
     let weatherOracle
     let deployer
 
-    const WEATHER_ORACLE_ADDRESS = "0x36E4f5F0C95D31F9f280CB607796212E2B0b71AF"
+    const WEATHER_ORACLE_ADDRESS = getWeatherOracleAddress()
     const BOT_URL = "https://radishield-production.up.railway.app"
 
     // African cities for testing
@@ -21,7 +32,6 @@ describe("Africa Weather Data Test", function () {
 
     before(async function () {
         console.log("🌍 Testing Weather Oracle with African Cities...")
-
         ;[deployer] = await ethers.getSigners()
 
         const WeatherOracle = await ethers.getContractFactory("WeatherOracle")

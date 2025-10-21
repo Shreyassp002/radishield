@@ -1,13 +1,23 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
 
+// Helper function to get deployed WeatherOracle address
+function getWeatherOracleAddress() {
+    try {
+        const deployment = require("../deployments/polygonAmoy/WeatherOracle.json")
+        return deployment.address
+    } catch (error) {
+        console.log("⚠️ Could not read deployment file, using fallback address")
+        return "0x300B53C6D1B4Bff74e30680c6bE49161C96Ab531"
+    }
+}
+
 describe("Weather Oracle Testnet Test", function () {
     let weatherOracle
     let deployer
     let oracleBot
 
-    // UPDATE THIS WITH YOUR DEPLOYED WEATHER ORACLE ADDRESS
-    const WEATHER_ORACLE_ADDRESS = "0x36E4f5F0C95D31F9f280CB607796212E2B0b71AF"
+    const WEATHER_ORACLE_ADDRESS = getWeatherOracleAddress()
 
     // Test coordinates
     const NAIROBI_LAT = -129210 // -1.2921 * 100000

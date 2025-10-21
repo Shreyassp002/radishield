@@ -9,7 +9,7 @@ interface IWeatherOracle {
     struct WeatherData {
         uint256 rainfall30d; // Total rainfall in last 30 days (mm)
         uint256 rainfall24h; // Total rainfall in last 24 hours (mm)
-        uint256 temperature; // Current temperature (Celsius * 100 for decimals)
+        uint256 temperature; // Current temperature (Celsius * 1000 for decimals)
         uint256 timestamp; // Unix timestamp of data collection
         bool isValid; // Data validation flag
     }

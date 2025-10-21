@@ -1,5 +1,6 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
+require("dotenv").config()
 
 describe("RadiShield Weather Oracle Integration", function () {
     let radiShield
@@ -11,28 +12,42 @@ describe("RadiShield Weather Oracle Integration", function () {
 
     // Test constants
     const BASE_PREMIUM_RATE = 700 // 7%
-    const MIN_COVERAGE = ethers.parseUnits("100", 6) // $100 USDC
-    const MAX_COVERAGE = ethers.parseUnits("10000", 6) // $10,000 USDC
+    const MIN_COVERAGE = ethers.parseUnits("1", 18) // 1 POL
+    const MAX_COVERAGE = ethers.parseUnits("10", 18) // 10 POL
 
     beforeEach(async function () {
-        ;[owner, farmer, oracleBot] = await ethers.getSigners()
+        ;[owner, oracleBot] = await ethers.getSigners()
 
-        // Deploy mock USDC token
-        const MockERC20 = await ethers.getContractFactory("MockERC20")
-        mockUSDC = await MockERC20.deploy("Mock USDC", "USDC", 6)
-        await mockUSDC.waitForDeployment()
+        // Create farmer from private key if provided, otherwise use default signer
+        if (
+            process.env.FARMER_PRIVATE_KEY &&
+            process.env.FARMER_PRIVATE_KEY !== "your_farmer_testnet_private_key_here"
+        ) {
+            farmer = new ethers.Wallet(process.env.FARMER_PRIVATE_KEY, ethers.provider)
+            console.log(`🌾 Using testnet farmer account: ${farmer.address}`)
+
+            // Check farmer balance
+            const balance = await ethers.provider.getBalance(farmer.address)
+            console.log(`💰 Farmer POL balance: ${ethers.formatEther(balance)} POL`)
+
+            if (balance < ethers.parseEther("0.1")) {
+                console.log(
+                    "⚠️ Warning: Farmer account has low POL balance. Get POL from faucet: https://faucet.polygon.technology/",
+                )
+            }
+        } else {
+            farmer = owner // Use default signer for local testing
+            console.log("🧪 Using local test account for farmer")
+        }
 
         // Deploy WeatherOracle contract
         const WeatherOracle = await ethers.getContractFactory("WeatherOracle")
         weatherOracle = await WeatherOracle.deploy()
         await weatherOracle.waitForDeployment()
 
-        // Deploy RadiShield contract with WeatherOracle
+        // Deploy RadiShield contract with WeatherOracle (no USDC needed)
         const RadiShield = await ethers.getContractFactory("RadiShield")
-        radiShield = await RadiShield.deploy(
-            await mockUSDC.getAddress(),
-            await weatherOracle.getAddress(),
-        )
+        radiShield = await RadiShield.deploy(await weatherOracle.getAddress())
         await radiShield.waitForDeployment()
 
         // Authorize oracle bot to update weather data
@@ -41,7 +56,7 @@ describe("RadiShield Weather Oracle Integration", function () {
 
     describe("calculatePremium", function () {
         it("should calculate correct premium for valid inputs", async function () {
-            const coverage = ethers.parseUnits("1000", 6) // $1000 USDC
+            const coverage = ethers.parseUnits("10", 18) // 10 POL
             const latitude = -129210 // Nairobi latitude scaled by 10000
             const longitude = 368219 // Nairobi longitude scaled by 10000
 
@@ -56,7 +71,7 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should emit PremiumCalculated event", async function () {
-            const coverage = ethers.parseUnits("500", 6)
+            const coverage = ethers.parseUnits("5", 18)
             const latitude = -129210
             const longitude = 368219
 
@@ -72,10 +87,10 @@ describe("RadiShield Weather Oracle Integration", function () {
 
         it("should calculate 7% premium rate correctly", async function () {
             const testCases = [
-                ethers.parseUnits("100", 6), // $100
-                ethers.parseUnits("500", 6), // $500
-                ethers.parseUnits("1000", 6), // $1000
-                ethers.parseUnits("5000", 6), // $5000
+                ethers.parseUnits("1", 18), // 1 POL
+                ethers.parseUnits("5", 18), // 5 POL
+                ethers.parseUnits("10", 18), // 10 POL
+                ethers.parseUnits("50", 18), // 50 POL
             ]
 
             const latitude = 0 // Equator
@@ -132,15 +147,15 @@ describe("RadiShield Weather Oracle Integration", function () {
                 .withArgs(latitude, longitude)
         })
 
-        it("should accept valid boundary coordinates", async function () {
+        it("should accept valid African coordinates", async function () {
             const coverage = ethers.parseUnits("1000", 6)
 
-            // Test valid boundary coordinates
+            // Test valid African coordinates
             const validCoordinates = [
-                { lat: -900000, lon: -1800000 }, // South Pole, -180 longitude
-                { lat: 900000, lon: 1800000 }, // North Pole, 180 longitude
-                { lat: 0, lon: 0 }, // Equator, Prime meridian
-                { lat: -129210, lon: 368219 }, // Nairobi coordinates
+                { lat: -129210, lon: 368219 }, // Nairobi, Kenya
+                { lat: 65244, lon: 33792 }, // Lagos, Nigeria
+                { lat: 300444, lon: 312357 }, // Cairo, Egypt
+                { lat: -339249, lon: 184241 }, // Cape Town, South Africa
             ]
 
             for (const coord of validCoordinates) {
@@ -155,25 +170,20 @@ describe("RadiShield Weather Oracle Integration", function () {
     })
 
     describe("createPolicy", function () {
-        beforeEach(async function () {
-            // Mint USDC to farmer for testing
-            const mintAmount = ethers.parseUnits("10000", 6) // $10,000 USDC
-            await mockUSDC.mint(farmer.address, mintAmount)
-
-            // Approve RadiShield contract to spend farmer's USDC
-            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), mintAmount)
-        })
-
         it("should create policy with correct parameters", async function () {
             const cropType = "maize"
-            const coverage = ethers.parseUnits("1000", 6) // $1000 USDC
+            const coverage = ethers.parseUnits("5", 18) // 5 POL (reasonable for testing)
             const duration = 30 * 24 * 60 * 60 // 30 days in seconds
             const latitude = -1 // -1 degree (will be scaled to -10000)
             const longitude = 36 // 36 degrees (will be scaled to 360000)
 
+            const expectedPremium = (coverage * BigInt(BASE_PREMIUM_RATE)) / BigInt(10000)
+
             const tx = await radiShield
                 .connect(farmer)
-                .createPolicy(cropType, coverage, duration, latitude, longitude)
+                .createPolicy(cropType, coverage, duration, latitude, longitude, {
+                    value: expectedPremium, // Send POL as payment
+                })
 
             const policyId = 1 // First policy should have ID 1
 
@@ -194,29 +204,37 @@ describe("RadiShield Weather Oracle Integration", function () {
             expect(policy.claimed).to.be.false
 
             // Check that premium was calculated and transferred
-            const expectedPremium = (coverage * BigInt(BASE_PREMIUM_RATE)) / BigInt(10000)
             expect(policy.premium).to.equal(expectedPremium)
         })
 
         it("should transfer premium from farmer to contract", async function () {
             const cropType = "maize"
-            const coverage = ethers.parseUnits("1000", 6)
+            const coverage = ethers.parseUnits("10", 18)
             const duration = 30 * 24 * 60 * 60
             const latitude = 0
             const longitude = 0
 
             const expectedPremium = (coverage * BigInt(BASE_PREMIUM_RATE)) / BigInt(10000)
-            const initialFarmerBalance = await mockUSDC.balanceOf(farmer.address)
-            const initialContractBalance = await mockUSDC.balanceOf(await radiShield.getAddress())
+            const initialFarmerBalance = await ethers.provider.getBalance(farmer.address)
+            const initialContractBalance = await ethers.provider.getBalance(
+                await radiShield.getAddress(),
+            )
 
-            await radiShield
+            const tx = await radiShield
                 .connect(farmer)
-                .createPolicy(cropType, coverage, duration, latitude, longitude)
+                .createPolicy(cropType, coverage, duration, latitude, longitude, {
+                    value: expectedPremium,
+                })
 
-            const finalFarmerBalance = await mockUSDC.balanceOf(farmer.address)
-            const finalContractBalance = await mockUSDC.balanceOf(await radiShield.getAddress())
+            const receipt = await tx.wait()
+            const gasUsed = receipt.gasUsed * receipt.gasPrice
 
-            expect(finalFarmerBalance).to.equal(initialFarmerBalance - expectedPremium)
+            const finalFarmerBalance = await ethers.provider.getBalance(farmer.address)
+            const finalContractBalance = await ethers.provider.getBalance(
+                await radiShield.getAddress(),
+            )
+
+            expect(finalFarmerBalance).to.equal(initialFarmerBalance - expectedPremium - gasUsed)
             expect(finalContractBalance).to.equal(initialContractBalance + expectedPremium)
         })
     })
@@ -541,11 +559,34 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should update statistics after policy claim", async function () {
-            await radiShield.emergencyPayout(1, ethers.parseUnits("500", 6), "Test claim")
+            // Create a policy first
+            const coverage = ethers.parseUnits("2", 18)
+            const premium = (coverage * BigInt(BASE_PREMIUM_RATE)) / BigInt(10000)
 
-            const stats = await radiShield.getContractStats()
-            expect(stats.totalPolicies).to.equal(3) // Total doesn't change
-            expect(stats.activePolicies).to.equal(2) // One less active
+            await radiShield
+                .connect(farmer)
+                .createPolicy("maize", coverage, 30 * 24 * 60 * 60, -1, 36, { value: premium })
+
+            // Check initial stats
+            let stats = await radiShield.getContractStats()
+            console.log(`\n📊 Initial Stats:`)
+            console.log(`   Total Policies: ${stats.totalPolicies}`)
+            console.log(`   Active Policies: ${stats.activePolicies}`)
+            console.log(`   Contract Balance: ${ethers.formatEther(stats.contractBalance)} POL`)
+
+            // Process emergency payout
+            await radiShield.emergencyPayout(1, ethers.parseEther("1"), "Test claim")
+
+            // Check updated stats
+            stats = await radiShield.getContractStats()
+            console.log(`\n📊 After Claim Stats:`)
+            console.log(`   Total Policies: ${stats.totalPolicies}`)
+            console.log(`   Active Policies: ${stats.activePolicies}`)
+            console.log(`   Claimed Policies: ${stats.claimedPolicies}`)
+            console.log(`   Contract Balance: ${ethers.formatEther(stats.contractBalance)} POL`)
+
+            expect(stats.totalPolicies).to.equal(1) // One policy created
+            expect(stats.activePolicies).to.equal(0) // None active after claim
             expect(stats.claimedPolicies).to.equal(1) // One claimed
         })
     })

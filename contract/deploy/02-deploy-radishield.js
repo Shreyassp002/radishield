@@ -8,36 +8,13 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
     const chainId = network.config.chainId
 
     log("----------------------------------------------------")
-    log("Deploying RadiShield...")
+    log("Deploying RadiShield with native POL support...")
 
     // Get the deployed WeatherOracle contract
     const weatherOracle = await get("WeatherOracle")
 
-    // Get network configuration
-    const config = networkConfig[chainId]
-
-    // Use mock USDC for local development, real USDC for testnets/mainnet
-    let usdcAddress
-    if (developmentChains.includes(network.name)) {
-        // Deploy mock USDC for local testing
-        const mockUsdc = await deploy("MockUSDC", {
-            from: deployer,
-            args: [],
-            log: true,
-        })
-        usdcAddress = mockUsdc.address
-        log(`Mock USDC deployed at ${usdcAddress}`)
-    } else {
-        // Use real USDC address from network config
-        usdcAddress = config.usdcToken
-        if (!usdcAddress) {
-            throw new Error(`USDC address not configured for network ${network.name}`)
-        }
-    }
-
     const args = [
-        usdcAddress, // USDC token address
-        weatherOracle.address, // Weather Oracle address
+        weatherOracle.address, // Weather Oracle address (no USDC needed)
     ]
 
     const radiShield = await deploy("RadiShield", {
