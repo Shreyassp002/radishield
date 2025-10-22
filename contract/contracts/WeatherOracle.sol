@@ -29,8 +29,8 @@ contract WeatherOracle is IWeatherOracle, Ownable, ReentrancyGuard {
 
     // Constants
     uint256 public constant DATA_FRESHNESS_THRESHOLD = 24 hours; // 24 hours in seconds
-    uint256 public constant MAX_RAINFALL_30D = 10000; // mm
-    uint256 public constant MAX_RAINFALL_24H = 1000; // mm
+    uint256 public constant MAX_RAINFALL_30D = 10000000; // mm * 1000 (scaled for bot format)
+    uint256 public constant MAX_RAINFALL_24H = 1000000; // mm * 1000 (scaled for bot format)
     uint256 public constant MAX_TEMPERATURE = 100000; // 100°C * 1000 (for decimals, bot format)
     uint256 public constant MIN_TEMPERATURE = 0; // -100°C * 1000 (stored as 0, actual -100)
 

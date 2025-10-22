@@ -635,9 +635,9 @@ contract RadiShield is IRadiShield, ReentrancyGuard, Ownable {
         // Check weather triggers and process payout if conditions are met
         _checkWeatherTriggersAndPayout(
             policyId,
-            data.rainfall30d,
-            data.rainfall24h,
-            data.temperature / 1000
+            data.rainfall30d / 1000, // Convert from bot format (scaled by 1000) to mm
+            data.rainfall24h / 1000, // Convert from bot format (scaled by 1000) to mm
+            data.temperature / 1000 // Convert from bot format (scaled by 1000) to Celsius
         );
     }
 
