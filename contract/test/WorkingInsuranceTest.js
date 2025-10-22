@@ -127,6 +127,11 @@ describe("Working Insurance System Test", function () {
 
         console.log("📋 Creating insurance policy with POL...")
 
+        // Get initial stats to track the change
+        const initialStats = await radiShield.getContractStats()
+        const initialPolicies = initialStats.totalPolicies
+        const initialActivePolicies = initialStats.activePolicies
+
         // Policy parameters
         const cropType = "maize"
         const coverage = ethers.parseEther("1") // 1 POL coverage (minimum allowed)
@@ -148,15 +153,15 @@ describe("Working Insurance System Test", function () {
         const receipt = await tx.wait()
         console.log(`✅ Policy created - TX: ${receipt.hash}`)
 
-        // Verify policy was created
-        const stats = await radiShield.getContractStats()
-        expect(stats.totalPolicies).to.equal(1)
-        expect(stats.activePolicies).to.equal(1)
+        // Verify policy was created (check increment from initial state)
+        const finalStats = await radiShield.getContractStats()
+        expect(finalStats.totalPolicies).to.equal(initialPolicies + 1n)
+        expect(finalStats.activePolicies).to.equal(initialActivePolicies + 1n)
 
         console.log(`📊 Contract Stats After Policy:`)
-        console.log(`   Total Policies: ${stats.totalPolicies}`)
-        console.log(`   Active Policies: ${stats.activePolicies}`)
-        console.log(`   Contract Balance: ${ethers.formatEther(stats.contractBalance)} POL`)
+        console.log(`   Total Policies: ${finalStats.totalPolicies}`)
+        console.log(`   Active Policies: ${finalStats.activePolicies}`)
+        console.log(`   Contract Balance: ${ethers.formatEther(finalStats.contractBalance)} POL`)
     })
 
     it("Should show contract statistics", async function () {
