@@ -2,10 +2,27 @@ const { expect } = require("chai")
 const { ethers } = require("hardhat")
 require("dotenv").config()
 
+// Helper function to get deployed contract addresses
+function getContractAddresses() {
+    try {
+        const weatherOracleDeployment = require("../deployments/polygonAmoy/WeatherOracle.json")
+        const radiShieldDeployment = require("../deployments/polygonAmoy/RadiShield.json")
+        return {
+            weatherOracle: weatherOracleDeployment.address,
+            radiShield: radiShieldDeployment.address,
+        }
+    } catch (error) {
+        console.log("⚠️ Could not read deployment files, using latest addresses")
+        return {
+            weatherOracle: "0xFB45AD2145e5fC19EFF37C04B120b1fc491eF66e",
+            radiShield: "0xD0A36216e870FA0c91B4Db5CAD04b85ee684dc9d",
+        }
+    }
+}
+
 describe("RadiShield Weather Oracle Integration", function () {
     let radiShield
     let weatherOracle
-    let mockUSDC
     let owner
     let farmer
     let oracleBot
@@ -14,9 +31,40 @@ describe("RadiShield Weather Oracle Integration", function () {
     const BASE_PREMIUM_RATE = 700 // 7%
     const MIN_COVERAGE = ethers.parseUnits("1", 18) // 1 POL
     const MAX_COVERAGE = ethers.parseUnits("10", 18) // 10 POL
+    const CONTRACT_ADDRESSES = getContractAddresses()
 
-    beforeEach(async function () {
-        ;[owner, oracleBot] = await ethers.getSigners()
+    // Helper function to ensure contract has minimum funding
+    async function ensureContractFunding(minAmount = "1") {
+        const contractBalance = await ethers.provider.getBalance(CONTRACT_ADDRESSES.radiShield)
+        const requiredBalance = ethers.parseEther(minAmount)
+
+        if (contractBalance < requiredBalance) {
+            console.log(
+                `💰 Contract needs funding: ${ethers.formatEther(contractBalance)} < ${minAmount} POL`,
+            )
+
+            // Only fund on local network or if explicitly testing funding
+            if (network.name === "hardhat") {
+                const fundTx = await owner.sendTransaction({
+                    to: CONTRACT_ADDRESSES.radiShield,
+                    value: ethers.parseEther("2"),
+                })
+                await fundTx.wait()
+                console.log(`✅ Contract funded with 2 POL`)
+            } else {
+                console.log(
+                    `⚠️ Contract needs funding on testnet. Run: npx hardhat run scripts/fundNewContract.js --network polygonAmoy`,
+                )
+            }
+        }
+    }
+
+    before(async function () {
+        // Set timeout for testnet operations
+        this.timeout(60000)
+        const signers = await ethers.getSigners()
+        owner = signers[0]
+        oracleBot = signers[1] || signers[0] // Use owner as oracleBot if only one signer
 
         // Create farmer from private key if provided, otherwise use default signer
         if (
@@ -30,7 +78,19 @@ describe("RadiShield Weather Oracle Integration", function () {
             const balance = await ethers.provider.getBalance(farmer.address)
             console.log(`💰 Farmer POL balance: ${ethers.formatEther(balance)} POL`)
 
-            if (balance < ethers.parseEther("0.1")) {
+            // Fund farmer on local network if needed
+            if (balance < ethers.parseEther("0.1") && network.name === "hardhat") {
+                console.log("💰 Funding farmer account for local testing...")
+                const fundTx = await owner.sendTransaction({
+                    to: farmer.address,
+                    value: ethers.parseEther("10"),
+                })
+                await fundTx.wait()
+                const newBalance = await ethers.provider.getBalance(farmer.address)
+                console.log(
+                    `✅ Funded farmer with 10 POL - New balance: ${ethers.formatEther(newBalance)} POL`,
+                )
+            } else if (balance < ethers.parseEther("0.1")) {
                 console.log(
                     "⚠️ Warning: Farmer account has low POL balance. Get POL from faucet: https://faucet.polygon.technology/",
                 )
@@ -40,18 +100,22 @@ describe("RadiShield Weather Oracle Integration", function () {
             console.log("🧪 Using local test account for farmer")
         }
 
-        // Deploy WeatherOracle contract
+        // Connect to deployed contracts
         const WeatherOracle = await ethers.getContractFactory("WeatherOracle")
-        weatherOracle = await WeatherOracle.deploy()
-        await weatherOracle.waitForDeployment()
+        weatherOracle = WeatherOracle.attach(CONTRACT_ADDRESSES.weatherOracle)
+        console.log(`📍 Connected to WeatherOracle: ${CONTRACT_ADDRESSES.weatherOracle}`)
 
-        // Deploy RadiShield contract with WeatherOracle (no USDC needed)
         const RadiShield = await ethers.getContractFactory("RadiShield")
-        radiShield = await RadiShield.deploy(await weatherOracle.getAddress())
-        await radiShield.waitForDeployment()
+        radiShield = RadiShield.attach(CONTRACT_ADDRESSES.radiShield)
+        console.log(`📍 Connected to RadiShield: ${CONTRACT_ADDRESSES.radiShield}`)
 
-        // Authorize oracle bot to update weather data
-        await weatherOracle.authorizeOracle(oracleBot.address)
+        // Verify oracle bot is authorized (owner should be authorized by default)
+        const isAuthorized = await weatherOracle.isAuthorizedOracle(owner.address)
+        if (!isAuthorized) {
+            console.log("⚠️ Owner not authorized as oracle - some tests may fail")
+        } else {
+            console.log("✅ Owner authorized as oracle")
+        }
     })
 
     describe("calculatePremium", function () {
@@ -88,9 +152,9 @@ describe("RadiShield Weather Oracle Integration", function () {
         it("should calculate 7% premium rate correctly", async function () {
             const testCases = [
                 ethers.parseUnits("1", 18), // 1 POL
+                ethers.parseUnits("3", 18), // 3 POL
                 ethers.parseUnits("5", 18), // 5 POL
-                ethers.parseUnits("10", 18), // 10 POL
-                ethers.parseUnits("50", 18), // 50 POL
+                ethers.parseUnits("8", 18), // 8 POL (within 10 POL max)
             ]
 
             const latitude = 0 // Equator
@@ -108,7 +172,7 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should revert for coverage below minimum", async function () {
-            const coverage = ethers.parseUnits("50", 6) // $50 - below minimum
+            const coverage = ethers.parseUnits("0.5", 18) // 0.5 POL - below minimum
             const latitude = 0
             const longitude = 0
 
@@ -118,7 +182,7 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should revert for coverage above maximum", async function () {
-            const coverage = ethers.parseUnits("15000", 6) // $15,000 - above maximum
+            const coverage = ethers.parseUnits("15", 18) // 15 POL - above maximum
             const latitude = 0
             const longitude = 0
 
@@ -128,7 +192,7 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should revert for invalid latitude (too low)", async function () {
-            const coverage = ethers.parseUnits("1000", 6)
+            const coverage = ethers.parseEther("5") // 5 POL (valid amount)
             const latitude = -1000000 // Below -90 degrees scaled
             const longitude = 0
 
@@ -138,7 +202,7 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should revert for invalid latitude (too high)", async function () {
-            const coverage = ethers.parseUnits("1000", 6)
+            const coverage = ethers.parseEther("5") // 5 POL (valid amount)
             const latitude = 1000000 // Above 90 degrees scaled
             const longitude = 0
 
@@ -148,7 +212,7 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         it("should accept valid African coordinates", async function () {
-            const coverage = ethers.parseUnits("1000", 6)
+            const coverage = ethers.parseEther("5") // 5 POL (valid amount)
 
             // Test valid African coordinates
             const validCoordinates = [
@@ -179,16 +243,16 @@ describe("RadiShield Weather Oracle Integration", function () {
 
             const expectedPremium = (coverage * BigInt(BASE_PREMIUM_RATE)) / BigInt(10000)
 
-            const tx = await radiShield
-                .connect(farmer)
-                .createPolicy(cropType, coverage, duration, latitude, longitude, {
-                    value: expectedPremium, // Send POL as payment
-                })
-
             const policyId = 1 // First policy should have ID 1
 
             // Check PolicyCreated event
-            await expect(tx)
+            await expect(
+                radiShield
+                    .connect(farmer)
+                    .createPolicy(cropType, coverage, duration, latitude, longitude, {
+                        value: expectedPremium, // Send POL as payment
+                    }),
+            )
                 .to.emit(radiShield, "PolicyCreated")
                 .withArgs(policyId, farmer.address, coverage, cropType)
 
@@ -243,18 +307,23 @@ describe("RadiShield Weather Oracle Integration", function () {
         let policyId
 
         beforeEach(async function () {
-            // Mint USDC to farmer and contract for testing
-            const usdcAmount = ethers.parseUnits("10000", 6) // $10,000 USDC
-            await mockUSDC.mint(farmer.address, usdcAmount)
-            await mockUSDC.mint(await radiShield.getAddress(), usdcAmount)
+            // Skip if farmer has no POL
+            const farmerBalance = await ethers.provider.getBalance(farmer.address)
+            if (farmerBalance < ethers.parseEther("0.5")) {
+                console.log("⏭️ Skipping weather tests - farmer needs POL")
+                this.skip()
+            }
 
-            // Approve RadiShield contract to spend farmer's USDC
-            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), usdcAmount)
+            // Ensure contract has funding for payouts
+            await ensureContractFunding("0.5")
 
-            // Create a test policy
+            // Create a test policy with POL
+            const coverage = ethers.parseEther("1") // 1 POL (minimum allowed)
+            const premium = (coverage * 700n) / 10000n // 7% premium
+
             await radiShield
                 .connect(farmer)
-                .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, -1, 36)
+                .createPolicy("maize", coverage, 30 * 24 * 60 * 60, -1, 36, { value: premium })
             policyId = 1
         })
 
@@ -271,9 +340,9 @@ describe("RadiShield Weather Oracle Integration", function () {
             it("should use existing fresh data immediately", async function () {
                 // First, add fresh weather data to oracle
                 const weatherData = {
-                    rainfall30d: 80,
-                    rainfall24h: 20,
-                    temperature: 2500, // 25°C * 100
+                    rainfall30d: 80, // 80mm (unscaled - WeatherOracle expects raw mm)
+                    rainfall24h: 20, // 20mm (unscaled - WeatherOracle expects raw mm)
+                    temperature: 25000, // 25°C - scaled by 1000 (WeatherOracle expects bot format)
                     timestamp: 0, // Will be set by contract
                     isValid: true,
                 }
@@ -297,7 +366,7 @@ describe("RadiShield Weather Oracle Integration", function () {
 
             it("should revert for already claimed policy", async function () {
                 // First claim the policy
-                await radiShield.emergencyPayout(policyId, ethers.parseUnits("500", 6), "Test")
+                await radiShield.emergencyPayout(policyId, ethers.parseEther("0.2"), "Test")
 
                 await expect(radiShield.requestWeatherData(policyId))
                     .to.be.revertedWithCustomError(radiShield, "PolicyAlreadyClaimed")
@@ -309,9 +378,9 @@ describe("RadiShield Weather Oracle Integration", function () {
             beforeEach(async function () {
                 // Add weather data to oracle
                 const weatherData = {
-                    rainfall30d: 25, // Below drought threshold (50mm)
-                    rainfall24h: 10,
-                    temperature: 3000, // 30°C * 100
+                    rainfall30d: 3, // 3mm - below drought threshold (5mm) - unscaled
+                    rainfall24h: 1, // 1mm - unscaled
+                    temperature: 30000, // 30°C - scaled by 1000
                     timestamp: 0,
                     isValid: true,
                 }
@@ -322,22 +391,25 @@ describe("RadiShield Weather Oracle Integration", function () {
             })
 
             it("should process weather data and trigger drought payout", async function () {
-                const expectedPayout = ethers.parseUnits("1000", 6) // Full coverage for drought
+                const expectedPayout = ethers.parseEther("1") // Full coverage for drought (1 POL)
 
                 await expect(radiShield.processWeatherData(policyId))
                     .to.emit(radiShield, "WeatherDataReceived")
-                    .withArgs(policyId, 25, 10, 3000)
+                    .withArgs(policyId, 3, 1, 30000)
                     .and.to.emit(radiShield, "PayoutTriggered")
-                    .withArgs(policyId, "drought", expectedPayout)
+                    .withArgs(policyId, "severe_drought", expectedPayout)
                     .and.to.emit(radiShield, "ClaimPaid")
                     .withArgs(policyId, farmer.address, expectedPayout, "Weather trigger")
             })
 
             it("should revert for invalid weather data", async function () {
                 // Create policy at different location where no weather data exists
+                const coverage = ethers.parseEther("1") // 1 POL
+                const premium = (coverage * 700n) / 10000n // 7% premium
+
                 await radiShield
                     .connect(farmer)
-                    .createPolicy("coffee", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, -2, 72)
+                    .createPolicy("coffee", coverage, 30 * 24 * 60 * 60, -2, 37, { value: premium })
 
                 // Try to process weather data for location with no data
                 await expect(radiShield.processWeatherData(2)).to.be.revertedWithCustomError(
@@ -348,11 +420,11 @@ describe("RadiShield Weather Oracle Integration", function () {
         })
 
         describe("Weather trigger thresholds", function () {
-            it("should trigger drought payout for rainfall < 50mm in 30 days", async function () {
+            it("should trigger drought payout for rainfall < 5mm in 30 days", async function () {
                 const droughtWeatherData = {
-                    rainfall30d: 25, // Below 50mm threshold
-                    rainfall24h: 10,
-                    temperature: 2500,
+                    rainfall30d: 3, // 3mm (below 5mm threshold) - unscaled
+                    rainfall24h: 1, // 1mm - unscaled
+                    temperature: 25000, // 25°C - scaled by 1000
                     timestamp: 0,
                     isValid: true,
                 }
@@ -361,16 +433,17 @@ describe("RadiShield Weather Oracle Integration", function () {
                     .connect(oracleBot)
                     .updateWeatherData(-10000, 360000, droughtWeatherData)
 
-                await expect(radiShield.processWeatherData(policyId))
+                const tx = await radiShield.processWeatherData(policyId)
+                await expect(tx)
                     .to.emit(radiShield, "PayoutTriggered")
-                    .withArgs(policyId, "drought", ethers.parseUnits("1000", 6))
+                    .withArgs(policyId, "severe_drought", ethers.parseEther("1")) // 1 POL coverage
             })
 
-            it("should trigger flood payout for rainfall > 100mm in 24 hours", async function () {
+            it("should trigger flood payout for rainfall > 200mm in 24 hours", async function () {
                 const floodWeatherData = {
-                    rainfall30d: 150,
-                    rainfall24h: 120, // Above 100mm threshold
-                    temperature: 2500,
+                    rainfall30d: 250, // 250mm - unscaled
+                    rainfall24h: 220, // 220mm (above 200mm threshold) - unscaled
+                    temperature: 25000, // 25°C - scaled by 1000
                     timestamp: 0,
                     isValid: true,
                 }
@@ -379,16 +452,17 @@ describe("RadiShield Weather Oracle Integration", function () {
                     .connect(oracleBot)
                     .updateWeatherData(-10000, 360000, floodWeatherData)
 
-                await expect(radiShield.processWeatherData(policyId))
+                const tx = await radiShield.processWeatherData(policyId)
+                await expect(tx)
                     .to.emit(radiShield, "PayoutTriggered")
-                    .withArgs(policyId, "flood", ethers.parseUnits("1000", 6))
+                    .withArgs(policyId, "severe_flood", ethers.parseEther("1")) // 1 POL coverage
             })
 
-            it("should trigger heatwave payout for temperature > 38°C", async function () {
+            it("should trigger heatwave payout for temperature > 55°C", async function () {
                 const heatwaveWeatherData = {
-                    rainfall30d: 80,
-                    rainfall24h: 20,
-                    temperature: 4000, // 40°C * 100, above 38°C threshold
+                    rainfall30d: 80, // 80mm - unscaled
+                    rainfall24h: 20, // 20mm - unscaled
+                    temperature: 57000, // 57°C (above 55°C threshold) - scaled by 1000
                     timestamp: 0,
                     isValid: true,
                 }
@@ -397,18 +471,19 @@ describe("RadiShield Weather Oracle Integration", function () {
                     .connect(oracleBot)
                     .updateWeatherData(-10000, 360000, heatwaveWeatherData)
 
-                const expectedPayout = (ethers.parseUnits("1000", 6) * BigInt(75)) / BigInt(100) // 75% payout
+                const expectedPayout = (ethers.parseEther("1") * BigInt(75)) / BigInt(100) // 75% of 1 POL
 
-                await expect(radiShield.processWeatherData(policyId))
+                const tx = await radiShield.processWeatherData(policyId)
+                await expect(tx)
                     .to.emit(radiShield, "PayoutTriggered")
-                    .withArgs(policyId, "heatwave", expectedPayout)
+                    .withArgs(policyId, "extreme_heatwave", expectedPayout)
             })
 
             it("should not trigger payout for normal weather conditions", async function () {
                 const normalWeatherData = {
-                    rainfall30d: 80, // Above drought threshold
-                    rainfall24h: 20, // Below flood threshold
-                    temperature: 3000, // 30°C, below heatwave threshold
+                    rainfall30d: 80, // 80mm (above 5mm drought threshold) - unscaled
+                    rainfall24h: 20, // 20mm (below 200mm flood threshold) - unscaled
+                    temperature: 30000, // 30°C (below 55°C heatwave threshold) - scaled by 1000
                     timestamp: 0,
                     isValid: true,
                 }
@@ -436,9 +511,9 @@ describe("RadiShield Weather Oracle Integration", function () {
         describe("getWeatherData", function () {
             it("should return weather data for a policy", async function () {
                 const weatherData = {
-                    rainfall30d: 60,
-                    rainfall24h: 15,
-                    temperature: 3200,
+                    rainfall30d: 60, // 60mm - unscaled
+                    rainfall24h: 15, // 15mm - unscaled
+                    temperature: 32000, // 32°C - scaled by 1000
                     timestamp: 0,
                     isValid: true,
                 }
@@ -450,7 +525,7 @@ describe("RadiShield Weather Oracle Integration", function () {
                 const retrievedData = await radiShield.getWeatherData(policyId)
                 expect(retrievedData.rainfall30d).to.equal(60)
                 expect(retrievedData.rainfall24h).to.equal(15)
-                expect(retrievedData.temperature).to.equal(3200)
+                expect(retrievedData.temperature).to.equal(32000)
                 expect(retrievedData.isValid).to.be.true
                 expect(retrievedData.timestamp).to.be.gt(0)
             })
@@ -467,25 +542,33 @@ describe("RadiShield Weather Oracle Integration", function () {
         let policyId
 
         beforeEach(async function () {
-            // Mint USDC to farmer and contract
-            const usdcAmount = ethers.parseUnits("10000", 6)
-            await mockUSDC.mint(farmer.address, usdcAmount)
-            await mockUSDC.mint(await radiShield.getAddress(), usdcAmount)
-            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), usdcAmount)
+            // Skip if farmer has no POL
+            const farmerBalance = await ethers.provider.getBalance(farmer.address)
+            if (farmerBalance < ethers.parseEther("0.5")) {
+                console.log("⏭️ Skipping emergency tests - farmer needs POL")
+                this.skip()
+            }
 
-            // Create test policy
+            // Ensure contract has funding for payouts
+            await ensureContractFunding("0.5")
+
+            // Create test policy with POL
+            const coverage = ethers.parseEther("1") // 1 POL (minimum allowed)
+            const premium = (coverage * 700n) / 10000n // 7% premium
+
             await radiShield
                 .connect(farmer)
-                .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, 0, 0)
+                .createPolicy("maize", coverage, 30 * 24 * 60 * 60, 0, 0, { value: premium })
             policyId = 1
         })
 
         describe("emergencyPayout", function () {
             it("should allow owner to process emergency payout", async function () {
-                const payoutAmount = ethers.parseUnits("500", 6)
+                const payoutAmount = ethers.parseEther("0.2") // 0.2 POL
                 const reason = "Oracle failure - manual payout"
 
-                await expect(radiShield.emergencyPayout(policyId, payoutAmount, reason))
+                const tx = await radiShield.emergencyPayout(policyId, payoutAmount, reason)
+                await expect(tx)
                     .to.emit(radiShield, "ClaimPaid")
                     .withArgs(policyId, farmer.address, payoutAmount, reason)
 
@@ -498,27 +581,29 @@ describe("RadiShield Weather Oracle Integration", function () {
                 await expect(
                     radiShield
                         .connect(farmer)
-                        .emergencyPayout(policyId, ethers.parseUnits("500", 6), "Unauthorized"),
+                        .emergencyPayout(policyId, ethers.parseEther("0.1"), "Unauthorized"),
                 ).to.be.revertedWithCustomError(radiShield, "OwnableUnauthorizedAccount")
             })
         })
 
         describe("emergencyWithdraw", function () {
-            it("should allow owner to withdraw USDC", async function () {
-                const withdrawAmount = ethers.parseUnits("1000", 6)
-                const initialBalance = await mockUSDC.balanceOf(owner.address)
+            it("should allow owner to withdraw POL", async function () {
+                const withdrawAmount = ethers.parseEther("0.1") // 0.1 POL
+                const initialBalance = await ethers.provider.getBalance(owner.address)
 
-                await radiShield.emergencyWithdraw(withdrawAmount, owner.address)
+                const tx = await radiShield.emergencyWithdraw(withdrawAmount, owner.address)
+                const receipt = await tx.wait()
+                const gasUsed = receipt.gasUsed * receipt.gasPrice
 
-                const finalBalance = await mockUSDC.balanceOf(owner.address)
-                expect(finalBalance).to.equal(initialBalance + withdrawAmount)
+                const finalBalance = await ethers.provider.getBalance(owner.address)
+                expect(finalBalance).to.equal(initialBalance + withdrawAmount - gasUsed)
             })
 
             it("should revert when non-owner tries to withdraw", async function () {
                 await expect(
                     radiShield
                         .connect(farmer)
-                        .emergencyWithdraw(ethers.parseUnits("1000", 6), farmer.address),
+                        .emergencyWithdraw(ethers.parseEther("0.1"), farmer.address),
                 ).to.be.revertedWithCustomError(radiShield, "OwnableUnauthorizedAccount")
             })
         })
@@ -526,22 +611,34 @@ describe("RadiShield Weather Oracle Integration", function () {
 
     describe("Contract Statistics", function () {
         beforeEach(async function () {
-            // Setup multiple policies for testing
-            const usdcAmount = ethers.parseUnits("20000", 6)
-            await mockUSDC.mint(farmer.address, usdcAmount)
-            await mockUSDC.mint(await radiShield.getAddress(), usdcAmount)
-            await mockUSDC.connect(farmer).approve(await radiShield.getAddress(), usdcAmount)
+            // Skip if farmer has no POL
+            const farmerBalance = await ethers.provider.getBalance(farmer.address)
+            if (farmerBalance < ethers.parseEther("0.5")) {
+                console.log("⏭️ Skipping statistics tests - farmer needs POL")
+                return
+            }
 
-            // Create multiple policies
+            // Ensure contract has funding for payouts
+            await ensureContractFunding("0.3")
+
+            // Create multiple policies with POL (minimum amounts)
+            const coverage1 = ethers.parseEther("1") // 1 POL (minimum)
+            const coverage2 = ethers.parseEther("1") // 1 POL (minimum)
+            const coverage3 = ethers.parseEther("1") // 1 POL (minimum)
+
+            const premium1 = (coverage1 * 700n) / 10000n
+            const premium2 = (coverage2 * 700n) / 10000n
+            const premium3 = (coverage3 * 700n) / 10000n
+
             await radiShield
                 .connect(farmer)
-                .createPolicy("maize", ethers.parseUnits("1000", 6), 30 * 24 * 60 * 60, -1, 36)
+                .createPolicy("maize", coverage1, 30 * 24 * 60 * 60, -1, 36, { value: premium1 })
             await radiShield
                 .connect(farmer)
-                .createPolicy("coffee", ethers.parseUnits("2000", 6), 60 * 24 * 60 * 60, -2, 37)
+                .createPolicy("coffee", coverage2, 60 * 24 * 60 * 60, -2, 37, { value: premium2 })
             await radiShield
                 .connect(farmer)
-                .createPolicy("wheat", ethers.parseUnits("1500", 6), 90 * 24 * 60 * 60, -3, 38)
+                .createPolicy("wheat", coverage3, 90 * 24 * 60 * 60, -3, 38, { value: premium3 })
         })
 
         it("should return correct contract statistics", async function () {
@@ -551,9 +648,9 @@ describe("RadiShield Weather Oracle Integration", function () {
             expect(stats.activePolicies).to.equal(3)
             expect(stats.claimedPolicies).to.equal(0)
             expect(stats.totalCoverage).to.equal(
-                ethers.parseUnits("1000", 6) +
-                    ethers.parseUnits("2000", 6) +
-                    ethers.parseUnits("1500", 6),
+                ethers.parseEther("1") + // 1 POL
+                    ethers.parseEther("1") + // 1 POL
+                    ethers.parseEther("1"), // 1 POL = 3 POL total
             )
             expect(stats.contractBalance).to.be.gt(0)
         })
@@ -575,7 +672,7 @@ describe("RadiShield Weather Oracle Integration", function () {
             console.log(`   Contract Balance: ${ethers.formatEther(stats.contractBalance)} POL`)
 
             // Process emergency payout
-            await radiShield.emergencyPayout(1, ethers.parseEther("1"), "Test claim")
+            await radiShield.emergencyPayout(1, ethers.parseEther("0.1"), "Test claim")
 
             // Check updated stats
             stats = await radiShield.getContractStats()
