@@ -1,5 +1,6 @@
 import * as chains from "viem/chains";
 import scaffoldConfig from "~~/scaffold.config";
+import { flareTestnet } from "~~/utils/chains";
 
 type ChainAttributes = {
   // color | [lightThemeColor, darkThemeColor]
@@ -89,6 +90,10 @@ export const NETWORKS_EXTRA_DATA: Record<string, ChainAttributes> = {
   },
   [chains.celoSepolia.id]: {
     color: "#476520",
+  },
+  [flareTestnet.id]: {
+    color: "#e74c3c",
+    // No nativeCurrencyTokenAddress for Flare testnet - price fetching disabled
   },
 };
 

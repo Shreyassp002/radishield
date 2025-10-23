@@ -18,10 +18,13 @@ const ABI = parseAbi([
 ]);
 
 export const fetchPriceFromUniswap = async (targetNetwork: ChainWithAttributes): Promise<number> => {
+  // Skip price fetching for Flare networks (C2FLR/FLR) and other non-ETH networks without token addresses
   if (
-    targetNetwork.nativeCurrency.symbol !== "ETH" &&
-    targetNetwork.nativeCurrency.symbol !== "SEP" &&
-    !targetNetwork.nativeCurrencyTokenAddress
+    targetNetwork.nativeCurrency.symbol === "C2FLR" ||
+    targetNetwork.nativeCurrency.symbol === "FLR" ||
+    (targetNetwork.nativeCurrency.symbol !== "ETH" &&
+      targetNetwork.nativeCurrency.symbol !== "SEP" &&
+      !targetNetwork.nativeCurrencyTokenAddress)
   ) {
     return 0;
   }

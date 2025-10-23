@@ -5,9 +5,9 @@
 import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 
 const deployedContracts = {
-  80002: {
+  114: {
     RadiShield: {
-      address: "0xD0A36216e870FA0c91B4Db5CAD04b85ee684dc9d",
+      address: "0x6e4410795200366439B9c1f567f1AE43D777Dd22",
       abi: [
         {
           inputs: [
@@ -1761,7 +1761,7 @@ const deployedContracts = {
       ],
     },
     WeatherOracle: {
-      address: "0xFB45AD2145e5fC19EFF37C04B120b1fc491eF66e",
+      address: "0x223cb9DFE5d4427cF50d1f33C3a3BaAc3DbE72be",
       abi: [
         {
           inputs: [],

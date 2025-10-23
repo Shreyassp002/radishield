@@ -1,3 +1,4 @@
+import { flareTestnet } from "./utils/chains";
 import * as chains from "viem/chains";
 
 export type BaseConfig = {
@@ -14,8 +15,8 @@ export type ScaffoldConfig = BaseConfig;
 export const DEFAULT_ALCHEMY_API_KEY = "oKxs-03sij-U_N0iOlrSsZFr29-IqbuF";
 
 const scaffoldConfig = {
-  // The networks on which your DApp is live - Using Polygon Amoy for RadiShield
-  targetNetworks: [chains.polygonAmoy],
+  // The networks on which your DApp is live - Using Flare Testnet for RadiShield
+  targetNetworks: [flareTestnet],
   // The interval at which your front-end polls the RPC servers for new data
   pollingInterval: 30000,
   // This is ours Alchemy's default API key.

@@ -22,23 +22,29 @@ const BuyInsurance: NextPage = () => {
 
   // Contract interactions
   const { writeContractAsync: createPolicy, isPending: isCreatingPolicy } = useScaffoldWriteContract("RadiShield");
-  const { writeContractAsync: calculatePremium, isPending: isCalculatingPremium } = useScaffoldWriteContract("RadiShield");
+  
+  // Use read contract for calculatePremium since it's a view function
+  // calculatePremium expects pre-scaled coordinates (multiplied by 10000)
+  // So for -1.2921, we pass -12921 (scaled by 10000)
+  const { data: calculatedPremium, refetch: refetchPremium, isLoading: isCalculatingPremium } = useScaffoldReadContract({
+    contractName: "RadiShield",
+    functionName: "calculatePremium",
+    args: coverage && latitude && longitude ? [
+      parseEther(coverage),
+      BigInt(Math.round(parseFloat(latitude) * 10000)),
+      BigInt(Math.round(parseFloat(longitude) * 10000))
+    ] : undefined,
+  });
 
   // Calculate premium when form changes
   const handleCalculatePremium = async () => {
     if (!coverage || !latitude || !longitude) return;
     
     try {
-      const coverageWei = parseEther(coverage);
-      const latScaled = Math.round(parseFloat(latitude) * 10000);
-      const lonScaled = Math.round(parseFloat(longitude) * 10000);
-      
-      const result = await calculatePremium({
-        functionName: "calculatePremium",
-        args: [coverageWei, BigInt(latScaled), BigInt(lonScaled)],
-      });
-      
-      setPremium(result as bigint);
+      const result = await refetchPremium();
+      if (result.data) {
+        setPremium(result.data as bigint);
+      }
     } catch (error) {
       console.error("Error calculating premium:", error);
     }
@@ -51,15 +57,26 @@ const BuyInsurance: NextPage = () => {
       return;
     }
 
+    // Validate African coordinates
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
+    if (lat < -35 || lat > 37 || lon < -18 || lon > 52) {
+      alert("Coordinates must be within Africa: Latitude -35° to 37°, Longitude -18° to 52°");
+      return;
+    }
+
     try {
       const coverageWei = parseEther(coverage);
       const durationSeconds = BigInt(parseInt(duration) * 24 * 60 * 60); // Convert days to seconds
-      const latScaled = Math.round(parseFloat(latitude) * 10000);
-      const lonScaled = Math.round(parseFloat(longitude) * 10000);
+      // createPolicy expects coordinates as simple integers (degrees)
+      // The contract will scale them by 10000 internally
+      // So -1.2921 becomes -1, and 36.8219 becomes 37 (rounded to nearest integer)
+      const lat = BigInt(Math.round(parseFloat(latitude)));
+      const lon = BigInt(Math.round(parseFloat(longitude)));
 
       await createPolicy({
         functionName: "createPolicy",
-        args: [cropType, coverageWei, durationSeconds, BigInt(latScaled), BigInt(lonScaled)],
+        args: [cropType, coverageWei, durationSeconds, lat, lon],
         value: premium,
       });
 
@@ -152,8 +169,8 @@ const BuyInsurance: NextPage = () => {
         {/* Coverage Amount */}
         <div className="form-control mb-4">
           <label className="label">
-            <span className="label-text font-medium">Coverage Amount (POL)</span>
-            <span className="label-text-alt">Min: 1 POL, Max: 10 POL</span>
+            <span className="label-text font-medium">Coverage Amount (C2FLR)</span>
+            <span className="label-text-alt">Min: 1 C2FLR, Max: 10 C2FLR</span>
           </label>
           <input
             type="number"
@@ -188,6 +205,7 @@ const BuyInsurance: NextPage = () => {
         <div className="mb-6">
           <label className="label">
             <span className="label-text font-medium">Farm Location (Africa Only)</span>
+            <span className="label-text-alt">Lat: -35° to 37°, Lon: -18° to 52°</span>
           </label>
           <div className="flex gap-2 mb-2">
             <input
@@ -196,7 +214,7 @@ const BuyInsurance: NextPage = () => {
               className="input input-bordered flex-1"
               value={latitude}
               onChange={(e) => setLatitude(e.target.value)}
-              placeholder="Latitude (e.g., -1.2921)"
+              placeholder="Latitude (e.g., -1.292 for Nairobi)"
             />
             <input
               type="number"
@@ -204,7 +222,7 @@ const BuyInsurance: NextPage = () => {
               className="input input-bordered flex-1"
               value={longitude}
               onChange={(e) => setLongitude(e.target.value)}
-              placeholder="Longitude (e.g., 36.8219)"
+              placeholder="Longitude (e.g., 36.822 for Nairobi)"
             />
           </div>
           <button 
@@ -232,7 +250,7 @@ const BuyInsurance: NextPage = () => {
           </div>
           {premium && (
             <div className="text-lg font-bold text-primary">
-              Premium: {formatEther(premium)} POL
+              Premium: {formatEther(premium)} C2FLR
             </div>
           )}
         </div>
