@@ -4,6 +4,11 @@
     "scripts": {
         "compile": "hardhat compile",
         "test": "hardhat test",
+        "test:flare": "hardhat test test/Flare*.test.js --network flareTestnet",
+        "test:flare:local": "hardhat test test/Flare*.test.js",
+        "test:flare:simple": "hardhat test test/FlareSimple.test.js --network flareTestnet",
+        "test:flare:core": "hardhat test test/FlareCore.test.js --network flareTestnet",
+        "test:flare:working": "hardhat test test/FlareCore.test.js test/FlareSimple.test.js test/FlareWorkingInsurance.test.js --network flareTestnet",
         "deploy": "hardhat deploy",
         "deploy:flare": "hardhat deploy --network flareTestnet --tags flare",
         "deploy:polygon": "hardhat deploy --network polygonAmoy",
