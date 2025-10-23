@@ -43,11 +43,22 @@ class Web3Client {
       // Check wallet balance
       const balance = await this.provider.getBalance(this.wallet.address);
       const balanceEth = ethers.formatEther(balance);
-      console.log(`💰 Wallet balance: ${balanceEth} ETH`);
+
+      // Determine native token name based on chain ID
+      let tokenName = "ETH";
+      if (network.chainId === 114n) {
+        tokenName = "C2FLR"; // Flare Testnet (Coston2)
+      } else if (network.chainId === 14n) {
+        tokenName = "FLR"; // Flare Mainnet
+      } else if (network.chainId === 80002n) {
+        tokenName = "POL"; // Polygon Amoy
+      }
+
+      console.log(`💰 Wallet balance: ${balanceEth} ${tokenName}`);
 
       if (parseFloat(balanceEth) < 0.001) {
         console.warn(
-          "⚠️  Low wallet balance. May not be sufficient for transactions."
+          `⚠️  Low wallet balance. May not be sufficient for transactions. Need more ${tokenName}.`
         );
       }
 
@@ -169,7 +180,7 @@ class Web3Client {
       // Parse common error types
       if (error.message.includes("insufficient funds")) {
         throw new Error(
-          "Insufficient funds for transaction. Please add more ETH to the wallet."
+          "Insufficient funds for transaction. Please add more native tokens (C2FLR/FLR/POL) to the wallet."
         );
       } else if (error.message.includes("UnauthorizedOracle")) {
         throw new Error(
