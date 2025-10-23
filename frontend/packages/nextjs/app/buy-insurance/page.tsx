@@ -5,7 +5,13 @@ import Link from "next/link";
 import type { NextPage } from "next";
 import { formatEther, parseEther } from "viem";
 import { useAccount } from "wagmi";
-import { ArrowLeftIcon, CurrencyDollarIcon, MapPinIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowLeftIcon,
+  CheckCircleIcon,
+  CurrencyDollarIcon,
+  MapPinIcon,
+  ShieldCheckIcon,
+} from "@heroicons/react/24/outline";
 import { Address } from "~~/components/scaffold-eth";
 import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
@@ -112,14 +118,16 @@ const BuyInsurance: NextPage = () => {
   if (!connectedAddress) {
     return (
       <div className="min-h-screen flex items-center justify-center py-12 px-6">
-        <div className="max-w-md mx-auto text-center">
-          <div className="bg-primary/10 p-6 rounded-2xl w-fit mx-auto mb-6">
-            <ShieldCheckIcon className="h-16 w-16 text-primary" />
+        <div className="max-w-lg mx-auto text-center animate-fade-in">
+          <div className="bg-gradient-to-br from-primary/20 to-primary/10 p-8 rounded-3xl w-fit mx-auto mb-8 shadow-xl">
+            <ShieldCheckIcon className="h-20 w-20 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Connect Your Wallet</h1>
-          <p className="text-gray-600 mb-8">Connect your wallet to purchase insurance</p>
-          <Link href="/" className="btn btn-primary">
-            <ArrowLeftIcon className="h-4 w-4" />
+          <h1 className="text-4xl font-bold text-gray-900 mb-6">Connect Your Wallet</h1>
+          <p className="text-xl text-gray-600 mb-8 leading-relaxed">
+            Connect your wallet to access parametric crop insurance and protect your harvest
+          </p>
+          <Link href="/" className="btn btn-primary text-lg px-8 py-4">
+            <ArrowLeftIcon className="h-5 w-5" />
             Back to Home
           </Link>
         </div>
@@ -128,27 +136,22 @@ const BuyInsurance: NextPage = () => {
   }
 
   return (
-    <div className="min-h-screen py-8">
-      <div className="container mx-auto px-6 max-w-4xl">
+    <div className="min-h-screen py-12">
+      <div className="container mx-auto px-6 max-w-6xl">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-12 animate-fade-in">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-gray-600 hover:text-primary mb-6 transition-colors"
+            className="inline-flex items-center gap-3 text-gray-600 hover:text-primary mb-8 transition-all duration-300 text-lg font-medium group"
           >
-            <ArrowLeftIcon className="h-4 w-4" />
+            <ArrowLeftIcon className="h-5 w-5 group-hover:-translate-x-1 transition-transform duration-300" />
             Back to Home
           </Link>
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">Buy Insurance</h1>
-            <p className="text-xl text-gray-600">Protect your crops</p>
+            <p className="text-lg text-gray-500 max-w-3xl mx-auto leading-relaxed">
+              Get parametric crop insurance with automatic payouts based on weather conditions
+            </p>
           </div>
-        </div>
-
-        {/* Connected Address */}
-        <div className="card p-6 mb-8 text-center">
-          <p className="text-sm font-medium text-gray-600 mb-2">Connected Wallet</p>
-          <Address address={connectedAddress} />
         </div>
 
         {/* Insurance Form */}
@@ -258,29 +261,38 @@ const BuyInsurance: NextPage = () => {
               <div className="space-y-4">
                 <button
                   type="button"
-                  className="btn btn-primary w-full"
+                  className={`w-full px-6 py-3 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
+                    isCalculatingPremium || !coverage || !latitude || !longitude
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      : "bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                  }`}
                   onClick={handleCalculatePremium}
                   disabled={isCalculatingPremium || !coverage || !latitude || !longitude}
                 >
                   {isCalculatingPremium ? (
                     <>
-                      <span className="loading loading-spinner loading-sm"></span>
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-400 border-t-transparent"></div>
                       Calculating Premium...
                     </>
                   ) : (
                     <>
-                      <CurrencyDollarIcon className="h-5 w-5 mr-2" />
+                      <CurrencyDollarIcon className="h-5 w-5" />
                       Calculate Premium
                     </>
                   )}
                 </button>
 
                 {premium && (
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-6 animate-fade-in">
                     <div className="text-center">
-                      <p className="text-sm text-gray-600 mb-1">Premium Amount</p>
-                      <p className="text-3xl font-bold text-primary">{formatEther(premium)} C2FLR</p>
-                      <p className="text-sm text-gray-500 mt-1">7% of coverage amount</p>
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                        <p className="text-sm font-semibold text-green-700">Premium Calculated</p>
+                      </div>
+                      <p className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-2">
+                        {formatEther(premium)} C2FLR
+                      </p>
+                      <p className="text-sm text-gray-600">7% of coverage amount</p>
                     </div>
                   </div>
                 )}
@@ -322,18 +334,22 @@ const BuyInsurance: NextPage = () => {
             {/* Create Policy Button */}
             <button
               type="button"
-              className="btn btn-primary w-full text-lg py-4"
+              className={`w-full px-8 py-4 rounded-lg font-bold text-lg transition-all duration-300 flex items-center justify-center gap-3 ${
+                isCreatingPolicy || !premium
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-white shadow-xl hover:shadow-2xl transform hover:-translate-y-1"
+              }`}
               onClick={handleCreatePolicy}
               disabled={isCreatingPolicy || !premium}
             >
               {isCreatingPolicy ? (
                 <>
-                  <span className="loading loading-spinner loading-sm"></span>
+                  <div className="animate-spin rounded-full h-6 w-6 border-3 border-gray-400 border-t-transparent"></div>
                   Creating Policy...
                 </>
               ) : (
                 <>
-                  <ShieldCheckIcon className="h-6 w-6 mr-2" />
+                  <ShieldCheckIcon className="h-6 w-6" />
                   Create Policy
                 </>
               )}
