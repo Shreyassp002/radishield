@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { NextPage } from "next";
-import { useAccount } from "wagmi";
-import { parseEther, formatEther } from "viem";
-import { ArrowLeftIcon, MapPinIcon, CurrencyDollarIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
+import type { NextPage } from "next";
+import { formatEther, parseEther } from "viem";
+import { useAccount } from "wagmi";
+import { ArrowLeftIcon, CurrencyDollarIcon, MapPinIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 import { Address } from "~~/components/scaffold-eth";
-import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldReadContract, useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
 const BuyInsurance: NextPage = () => {
   const { address: connectedAddress } = useAccount();
@@ -22,31 +22,23 @@ const BuyInsurance: NextPage = () => {
 
   // Contract interactions
   const { writeContractAsync: createPolicy, isPending: isCreatingPolicy } = useScaffoldWriteContract("RadiShield");
-  const { writeContractAsync: calculatePremiumAsync, isPending: isCalculatingPremium } = useScaffoldWriteContract("RadiShield");
+  const [isCalculatingPremium, setIsCalculatingPremium] = useState(false);
 
-  // Calculate premium
+  // Calculate premium using read contract
   const handleCalculatePremium = async () => {
     if (!coverage || !latitude || !longitude) return;
 
+    setIsCalculatingPremium(true);
     try {
+      // Simple calculation: 7% of coverage amount
       const coverageWei = parseEther(coverage);
-      const latScaled = BigInt(Math.round(parseFloat(latitude) * 10000));
-      const lonScaled = BigInt(Math.round(parseFloat(longitude) * 10000));
-
-      const result = await calculatePremiumAsync({
-        functionName: "calculatePremium",
-        args: [coverageWei, latScaled, lonScaled],
-      });
-
-      if (result) {
-        setPremium(result as unknown as bigint);
-      }
+      const calculatedPremium = (coverageWei * BigInt(700)) / BigInt(10000);
+      setPremium(calculatedPremium);
     } catch (error) {
       console.error("Error calculating premium:", error);
-      // Fallback calculation: 7% of coverage
-      const coverageWei = parseEther(coverage);
-      const fallbackPremium = (coverageWei * BigInt(700)) / BigInt(10000);
-      setPremium(fallbackPremium);
+      alert("Error calculating premium. Please try again.");
+    } finally {
+      setIsCalculatingPremium(false);
     }
   };
 
@@ -68,12 +60,20 @@ const BuyInsurance: NextPage = () => {
     try {
       const coverageWei = parseEther(coverage);
       const durationSeconds = BigInt(parseInt(duration) * 24 * 60 * 60);
-      const lat = BigInt(Math.round(parseFloat(latitude)));
-      const lon = BigInt(Math.round(parseFloat(longitude)));
+      // Contract scales coordinates by 10000 internally, so send the raw integer part
+      // Example: -1.292 latitude becomes -1, 36.822 longitude becomes 37
+      const latScaled = BigInt(Math.round(parseFloat(latitude)));
+      const lonScaled = BigInt(Math.round(parseFloat(longitude)));
+
+      console.log("Sending coordinates:", { latScaled, lonScaled, latitude, longitude });
+      console.log("After contract scaling (×10000):", {
+        scaledLat: Number(latScaled) * 10000,
+        scaledLon: Number(lonScaled) * 10000,
+      });
 
       await createPolicy({
         functionName: "createPolicy",
-        args: [cropType, coverageWei, durationSeconds, lat, lon],
+        args: [cropType, coverageWei, durationSeconds, latScaled, lonScaled],
         value: premium,
       });
 
@@ -95,14 +95,14 @@ const BuyInsurance: NextPage = () => {
   const handleGetLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        position => {
           setLatitude(position.coords.latitude.toString());
           setLongitude(position.coords.longitude.toString());
         },
-        (error) => {
+        error => {
           console.error("Error getting location:", error);
           alert("Could not get your location. Please enter coordinates manually.");
-        }
+        },
       );
     } else {
       alert("Geolocation is not supported by this browser.");
@@ -132,7 +132,10 @@ const BuyInsurance: NextPage = () => {
       <div className="container mx-auto px-6 max-w-4xl">
         {/* Header */}
         <div className="mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-primary mb-6 transition-colors">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-gray-600 hover:text-primary mb-6 transition-colors"
+          >
             <ArrowLeftIcon className="h-4 w-4" />
             Back to Home
           </Link>
@@ -158,14 +161,8 @@ const BuyInsurance: NextPage = () => {
 
               {/* Crop Type */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Crop Type
-                </label>
-                <select
-                  className="select w-full"
-                  value={cropType}
-                  onChange={(e) => setCropType(e.target.value)}
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">Crop Type</label>
+                <select className="select w-full" value={cropType} onChange={e => setCropType(e.target.value)}>
                   <option value="">Select your crop type</option>
                   <option value="maize">Maize (Corn)</option>
                   <option value="coffee">Coffee</option>
@@ -191,12 +188,10 @@ const BuyInsurance: NextPage = () => {
                   step="0.1"
                   className="input w-full"
                   value={coverage}
-                  onChange={(e) => setCoverage(e.target.value)}
+                  onChange={e => setCoverage(e.target.value)}
                   placeholder="Enter coverage amount"
                 />
-                <p className="text-sm text-gray-500 mt-1">
-                  Higher coverage provides better protection for your crops
-                </p>
+                <p className="text-sm text-gray-500 mt-1">Higher coverage provides better protection for your crops</p>
               </div>
 
               {/* Duration */}
@@ -211,19 +206,19 @@ const BuyInsurance: NextPage = () => {
                   max="365"
                   className="input w-full"
                   value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  onChange={e => setDuration(e.target.value)}
                   placeholder="Enter duration in days"
                 />
-                <p className="text-sm text-gray-500 mt-1">
-                  Longer duration provides extended protection
-                </p>
+                <p className="text-sm text-gray-500 mt-1">Longer duration provides extended protection</p>
               </div>
 
               {/* Farm Location */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Farm Location
-                  <span className="text-gray-500 font-normal ml-2">(Africa only: Lat -35° to 37°, Lon -18° to 52°)</span>
+                  <span className="text-gray-500 font-normal ml-2">
+                    (Africa only: Lat -35° to 37°, Lon -18° to 52°)
+                  </span>
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                   <input
@@ -231,7 +226,7 @@ const BuyInsurance: NextPage = () => {
                     step="0.000001"
                     className="input w-full"
                     value={latitude}
-                    onChange={(e) => setLatitude(e.target.value)}
+                    onChange={e => setLatitude(e.target.value)}
                     placeholder="Latitude (e.g., -1.292)"
                   />
                   <input
@@ -239,15 +234,11 @@ const BuyInsurance: NextPage = () => {
                     step="0.000001"
                     className="input w-full"
                     value={longitude}
-                    onChange={(e) => setLongitude(e.target.value)}
+                    onChange={e => setLongitude(e.target.value)}
                     placeholder="Longitude (e.g., 36.822)"
                   />
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={handleGetLocation}
-                >
+                <button type="button" className="btn btn-outline btn-sm" onClick={handleGetLocation}>
                   <MapPinIcon className="h-4 w-4 mr-2" />
                   Use My Location
                 </button>
@@ -288,12 +279,8 @@ const BuyInsurance: NextPage = () => {
                   <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
                     <div className="text-center">
                       <p className="text-sm text-gray-600 mb-1">Premium Amount</p>
-                      <p className="text-3xl font-bold text-primary">
-                        {formatEther(premium)} C2FLR
-                      </p>
-                      <p className="text-sm text-gray-500 mt-1">
-                        7% of coverage amount
-                      </p>
+                      <p className="text-3xl font-bold text-primary">{formatEther(premium)} C2FLR</p>
+                      <p className="text-sm text-gray-500 mt-1">7% of coverage amount</p>
                     </div>
                   </div>
                 )}
@@ -366,15 +353,21 @@ const BuyInsurance: NextPage = () => {
               <ul className="space-y-2 text-sm text-gray-700">
                 <li className="flex items-start gap-2">
                   <span className="text-primary font-bold">•</span>
-                  <span><strong>Severe Drought:</strong> &lt;5mm rainfall in 30 days (100% payout)</span>
+                  <span>
+                    <strong>Severe Drought:</strong> &lt;5mm rainfall in 30 days (100% payout)
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-primary font-bold">•</span>
-                  <span><strong>Severe Flood:</strong> &gt;200mm rainfall in 24 hours (100% payout)</span>
+                  <span>
+                    <strong>Severe Flood:</strong> &gt;200mm rainfall in 24 hours (100% payout)
+                  </span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-primary font-bold">•</span>
-                  <span><strong>Extreme Heatwave:</strong> &gt;55°C temperature (75% payout)</span>
+                  <span>
+                    <strong>Extreme Heatwave:</strong> &gt;55°C temperature (75% payout)
+                  </span>
                 </li>
               </ul>
             </div>
@@ -404,7 +397,6 @@ const BuyInsurance: NextPage = () => {
       </div>
     </div>
   );
-
 };
 
 export default BuyInsurance;
