@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { NextPage } from "next";
 import { useAccount } from "wagmi";
 import { parseEther, formatEther } from "viem";
-import { ArrowLeftIcon, MapPinIcon, CurrencyDollarIcon } from "@heroicons/react/24/outline";
+import { ArrowLeftIcon, MapPinIcon, CurrencyDollarIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { Address } from "~~/components/scaffold-eth";
 import { useScaffoldWriteContract, useScaffoldReadContract } from "~~/hooks/scaffold-eth";
@@ -114,177 +114,304 @@ const BuyInsurance: NextPage = () => {
 
   if (!connectedAddress) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Connect Your Wallet</h1>
-          <p className="text-base-content/70">Please connect your wallet to buy insurance</p>
+      <div className="min-h-screen flex items-center justify-center py-12 px-6">
+        <div className="max-w-md mx-auto text-center">
+          <div className="bg-primary/10 p-6 rounded-2xl w-fit mx-auto mb-6">
+            <ShieldCheckIcon className="h-16 w-16 text-primary" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Connect Your Wallet</h1>
+          <p className="text-gray-600 mb-8">Connect your wallet to purchase insurance</p>
+          <Link href="/" className="btn btn-primary">
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back to Home
+          </Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-2xl">
-      {/* Header */}
-      <div className="flex items-center mb-8">
-        <Link href="/" className="btn btn-ghost btn-sm mr-4">
-          <ArrowLeftIcon className="h-4 w-4" />
-          Back
-        </Link>
-        <h1 className="text-3xl font-bold">Buy Crop Insurance</h1>
-      </div>
-
-      {/* Connected Address */}
-      <div className="bg-base-100 p-4 rounded-lg mb-6">
-        <p className="text-sm text-base-content/70 mb-2">Connected as:</p>
-        <Address address={connectedAddress} />
-      </div>
-
-      {/* Insurance Form */}
-      <div className="bg-base-100 p-6 rounded-lg shadow-lg">
-        <h2 className="text-xl font-bold mb-6">Policy Details</h2>
-        
-        {/* Crop Type */}
-        <div className="form-control mb-4">
-          <label className="label">
-            <span className="label-text font-medium">Crop Type</span>
-          </label>
-          <select 
-            className="select select-bordered w-full"
-            value={cropType}
-            onChange={(e) => setCropType(e.target.value)}
-          >
-            <option value="">Select crop type</option>
-            <option value="maize">Maize</option>
-            <option value="coffee">Coffee</option>
-            <option value="tea">Tea</option>
-            <option value="rice">Rice</option>
-            <option value="wheat">Wheat</option>
-            <option value="cassava">Cassava</option>
-            <option value="beans">Beans</option>
-            <option value="sorghum">Sorghum</option>
-          </select>
-        </div>
-
-        {/* Coverage Amount */}
-        <div className="form-control mb-4">
-          <label className="label">
-            <span className="label-text font-medium">Coverage Amount (C2FLR)</span>
-            <span className="label-text-alt">Min: 1 C2FLR, Max: 10 C2FLR</span>
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="10"
-            step="0.1"
-            className="input input-bordered w-full"
-            value={coverage}
-            onChange={(e) => setCoverage(e.target.value)}
-            placeholder="Enter coverage amount"
-          />
-        </div>
-
-        {/* Duration */}
-        <div className="form-control mb-4">
-          <label className="label">
-            <span className="label-text font-medium">Duration (Days)</span>
-            <span className="label-text-alt">Min: 30 days, Max: 365 days</span>
-          </label>
-          <input
-            type="number"
-            min="30"
-            max="365"
-            className="input input-bordered w-full"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            placeholder="Enter duration in days"
-          />
-        </div>
-
-        {/* Location */}
-        <div className="mb-6">
-          <label className="label">
-            <span className="label-text font-medium">Farm Location (Africa Only)</span>
-            <span className="label-text-alt">Lat: -35° to 37°, Lon: -18° to 52°</span>
-          </label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="number"
-              step="0.000001"
-              className="input input-bordered flex-1"
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              placeholder="Latitude (e.g., -1.292 for Nairobi)"
-            />
-            <input
-              type="number"
-              step="0.000001"
-              className="input input-bordered flex-1"
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              placeholder="Longitude (e.g., 36.822 for Nairobi)"
-            />
+    <div className="min-h-screen py-8">
+      <div className="container mx-auto px-6 max-w-4xl">
+        {/* Header */}
+        <div className="mb-8">
+          <Link href="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-primary mb-6 transition-colors">
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back to Home
+          </Link>
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Buy Insurance</h1>
+            <p className="text-xl text-gray-600">Protect your crops</p>
           </div>
-          <button 
-            type="button" 
-            className="btn btn-outline btn-sm"
-            onClick={handleGetLocation}
-          >
-            <MapPinIcon className="h-4 w-4 mr-2" />
-            Use My Location
-          </button>
         </div>
 
-        {/* Premium Calculation */}
-        <div className="bg-base-200 p-4 rounded-lg mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <span className="font-medium">Premium Calculation</span>
+        {/* Connected Address */}
+        <div className="card p-6 mb-8 text-center">
+          <p className="text-sm font-medium text-gray-600 mb-2">Connected Wallet</p>
+          <Address address={connectedAddress} />
+        </div>
+
+        {/* Insurance Form */}
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* Left Column - Form */}
+          <div className="space-y-6">
+            {/* Policy Details Section */}
+            <div className="form-section">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Policy Details</h2>
+              
+              {/* Crop Type */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Crop Type
+                </label>
+                <select 
+                  className="select w-full"
+                  value={cropType}
+                  onChange={(e) => setCropType(e.target.value)}
+                >
+                  <option value="">Select your crop type</option>
+                  <option value="maize">Maize (Corn)</option>
+                  <option value="coffee">Coffee</option>
+                  <option value="tea">Tea</option>
+                  <option value="rice">Rice</option>
+                  <option value="wheat">Wheat</option>
+                  <option value="cassava">Cassava</option>
+                  <option value="beans">Beans</option>
+                  <option value="sorghum">Sorghum</option>
+                </select>
+              </div>
+
+              {/* Coverage Amount */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Coverage Amount
+                  <span className="text-gray-500 font-normal ml-2">(1-10 C2FLR)</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="0.1"
+                  className="input w-full"
+                  value={coverage}
+                  onChange={(e) => setCoverage(e.target.value)}
+                  placeholder="Enter coverage amount"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Higher coverage provides better protection for your crops
+                </p>
+              </div>
+
+              {/* Duration */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Policy Duration
+                  <span className="text-gray-500 font-normal ml-2">(30-365 days)</span>
+                </label>
+                <input
+                  type="number"
+                  min="30"
+                  max="365"
+                  className="input w-full"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  placeholder="Enter duration in days"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Longer duration provides extended protection
+                </p>
+              </div>
+            </div>
+
+            {/* Location Section */}
+            <div className="form-section">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Farm Location</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Coverage is available for farms located within Africa (Lat: -35° to 37°, Lon: -18° to 52°)
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Latitude
+                  </label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="input w-full"
+                    value={latitude}
+                    onChange={(e) => setLatitude(e.target.value)}
+                    placeholder="e.g., -1.292 (Nairobi)"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Longitude
+                  </label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    className="input w-full"
+                    value={longitude}
+                    onChange={(e) => setLongitude(e.target.value)}
+                    placeholder="e.g., 36.822 (Nairobi)"
+                  />
+                </div>
+              </div>
+              
+              <button 
+                type="button" 
+                className="btn btn-outline w-full sm:w-auto"
+                onClick={handleGetLocation}
+              >
+                <MapPinIcon className="h-4 w-4 mr-2" />
+                Use My Current Location
+              </button>
+            </div>
+          </div>
+
+          {/* Right Column - Summary & Actions */}
+          <div className="space-y-6">
+            {/* Premium Calculation */}
+            <div className="form-section">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Premium Calculation</h3>
+              
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  className="btn btn-primary w-full"
+                  onClick={handleCalculatePremium}
+                  disabled={isCalculatingPremium || !coverage || !latitude || !longitude}
+                >
+                  {isCalculatingPremium ? (
+                    <>
+                      <span className="loading loading-spinner loading-sm"></span>
+                      Calculating Premium...
+                    </>
+                  ) : (
+                    <>
+                      <CurrencyDollarIcon className="h-5 w-5 mr-2" />
+                      Calculate Premium
+                    </>
+                  )}
+                </button>
+                
+                {premium && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600 mb-1">Premium Amount</p>
+                      <p className="text-3xl font-bold text-primary">
+                        {formatEther(premium)} C2FLR
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        7% of coverage amount
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Policy Summary */}
+            {premium && (
+              <div className="form-section">
+                <h3 className="text-xl font-bold text-gray-900 mb-4">Policy Summary</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Crop Type:</span>
+                    <span className="font-medium capitalize">{cropType || "Not selected"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Coverage:</span>
+                    <span className="font-medium">{coverage} C2FLR</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Duration:</span>
+                    <span className="font-medium">{duration} days</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Location:</span>
+                    <span className="font-medium text-sm">
+                      {latitude && longitude ? `${latitude}, ${longitude}` : "Not set"}
+                    </span>
+                  </div>
+                  <hr className="border-gray-200" />
+                  <div className="flex justify-between text-lg font-bold">
+                    <span>Premium:</span>
+                    <span className="text-primary">{formatEther(premium)} C2FLR</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Create Policy Button */}
             <button
               type="button"
-              className="btn btn-primary btn-sm"
-              onClick={handleCalculatePremium}
-              disabled={isCalculatingPremium || !coverage || !latitude || !longitude}
+              className="btn btn-primary w-full text-lg py-4"
+              onClick={handleCreatePolicy}
+              disabled={isCreatingPolicy || !premium}
             >
-              {isCalculatingPremium ? "Calculating..." : "Calculate Premium"}
+              {isCreatingPolicy ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Creating Policy...
+                </>
+              ) : (
+                <>
+                  <ShieldCheckIcon className="h-6 w-6 mr-2" />
+                  Create Policy
+                </>
+              )}
             </button>
           </div>
-          {premium && (
-            <div className="text-lg font-bold text-primary">
-              Premium: {formatEther(premium)} C2FLR
-            </div>
-          )}
         </div>
 
-        {/* Create Policy Button */}
-        <button
-          type="button"
-          className="btn btn-success w-full"
-          onClick={handleCreatePolicy}
-          disabled={isCreatingPolicy || !premium}
-        >
-          {isCreatingPolicy ? (
-            <>
-              <span className="loading loading-spinner loading-sm"></span>
-              Creating Policy...
-            </>
-          ) : (
-            <>
-              <CurrencyDollarIcon className="h-5 w-5 mr-2" />
-              Create Insurance Policy
-            </>
-          )}
-        </button>
-
-        {/* Info */}
-        <div className="mt-6 p-4 bg-info/10 rounded-lg">
-          <h3 className="font-bold text-info mb-2">Coverage Information</h3>
-          <ul className="text-sm text-base-content/70 space-y-1">
-            <li>• Severe Drought: &lt;5mm rainfall in 30 days (100% payout)</li>
-            <li>• Severe Flood: &gt;200mm rainfall in 24 hours (100% payout)</li>
-            <li>• Extreme Heatwave: &gt;55°C temperature (75% payout)</li>
-            <li>• Automatic payouts based on weather data</li>
-            <li>• Coverage limited to African coordinates</li>
-          </ul>
+        {/* Coverage Information */}
+        <div className="mt-8 card p-6">
+          <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <ShieldCheckIcon className="h-6 w-6 text-primary" />
+            Coverage Information
+          </h3>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-2">Weather Triggers</h4>
+              <ul className="space-y-2 text-sm text-gray-700">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span><strong>Severe Drought:</strong> &lt;5mm rainfall in 30 days (100% payout)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span><strong>Severe Flood:</strong> &gt;200mm rainfall in 24 hours (100% payout)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span><strong>Extreme Heatwave:</strong> &gt;55°C temperature (75% payout)</span>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-2">Key Features</h4>
+              <ul className="space-y-2 text-sm text-gray-700">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span>Automatic payouts based on weather data</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span>No paperwork required</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span>Africa coverage only</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary font-bold">•</span>
+                  <span>Blockchain transparency</span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </div>

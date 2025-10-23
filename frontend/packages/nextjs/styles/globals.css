@@ -1,123 +1,209 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
-
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
-
 @theme {
-  --shadow-center: 0 0 12px -2px rgb(0 0 0 / 0.05);
-  --animate-pulse-fast: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --shadow-light: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.1);
 }
 
 @plugin "daisyui" {
-  themes:
-    light,
-    dark --prefersdark;
+  themes: light;
 }
 
 @plugin "daisyui/theme" {
   name: "light";
 
-  --color-primary: #93bbfb;
-  --color-primary-content: #212638;
-  --color-secondary: #dae8ff;
-  --color-secondary-content: #212638;
-  --color-accent: #93bbfb;
-  --color-accent-content: #212638;
-  --color-neutral: #212638;
+  /* Clean White & Violet Theme */
+  --color-primary: #8b5cf6; /* Violet 500 */
+  --color-primary-content: #ffffff;
+  --color-secondary: #a78bfa; /* Violet 400 */
+  --color-secondary-content: #ffffff;
+  --color-accent: #c4b5fd; /* Violet 300 */
+  --color-accent-content: #374151;
+  --color-neutral: #6b7280; /* Gray 500 */
   --color-neutral-content: #ffffff;
-  --color-base-100: #ffffff;
-  --color-base-200: #f4f8ff;
-  --color-base-300: #dae8ff;
-  --color-base-content: #212638;
-  --color-info: #93bbfb;
-  --color-success: #34eeb6;
-  --color-warning: #ffcf72;
-  --color-error: #ff8863;
 
-  --radius-field: 9999rem;
-  --radius-box: 1rem;
-  --tt-tailw: 6px;
+  /* Clean Light Background */
+  --color-base-100: #ffffff; /* Pure white */
+  --color-base-200: #fafafa; /* Gray 50 */
+  --color-base-300: #f3f4f6; /* Gray 100 */
+  --color-base-content: #374151; /* Gray 700 */
+
+  /* Unified Violet Status Colors */
+  --color-info: #a78bfa; /* Violet 400 */
+  --color-success: #8b5cf6; /* Violet 500 */
+  --color-warning: #c4b5fd; /* Violet 300 */
+  --color-error: #7c3aed; /* Violet 600 */
+
+  /* Simple Rounded Corners */
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --radius-card: 1rem;
 }
 
-@plugin "daisyui/theme" {
-  name: "dark";
-
-  --color-primary: #212638;
-  --color-primary-content: #f9fbff;
-  --color-secondary: #323f61;
-  --color-secondary-content: #f9fbff;
-  --color-accent: #4969a6;
-  --color-accent-content: #f9fbff;
-  --color-neutral: #f9fbff;
-  --color-neutral-content: #385183;
-  --color-base-100: #385183;
-  --color-base-200: #2a3655;
-  --color-base-300: #212638;
-  --color-base-content: #f9fbff;
-  --color-info: #385183;
-  --color-success: #34eeb6;
-  --color-warning: #ffcf72;
-  --color-error: #ff8863;
-
-  --radius-field: 9999rem;
-  --radius-box: 1rem;
-
-  --tt-tailw: 6px;
-  --tt-bg: var(--color-primary);
-}
-
-/*
-  The default border color has changed to `currentColor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
 @layer base {
   *,
   ::after,
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
-  }
-
-  p {
-    margin: 1rem 0;
+    border-color: var(--color-base-300);
   }
 
   body {
     min-height: 100vh;
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+    background: #fafafa;
+    color: var(--color-base-content);
+    line-height: 1.6;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Visible Orbs Background - Testing */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background:
+      radial-gradient(circle 300px at 25% 25%, #8b5cf6 0%, rgba(139, 92, 246, 0.6) 30%, transparent 70%),
+      radial-gradient(circle 250px at 75% 75%, #a78bfa 0%, rgba(167, 139, 250, 0.5) 30%, transparent 70%),
+      radial-gradient(circle 200px at 50% 50%, #c4b5fd 0%, rgba(196, 181, 253, 0.4) 30%, transparent 70%);
+    z-index: 0;
+    animation: orbitalFloat 20s ease-in-out infinite;
+    filter: blur(2px);
+    pointer-events: none;
+    opacity: 0.3;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background:
+      radial-gradient(circle 180px at 80% 20%, #7c3aed 0%, rgba(124, 58, 237, 0.4) 30%, transparent 70%),
+      radial-gradient(circle 150px at 20% 80%, #ddd6fe 0%, rgba(221, 214, 254, 0.3) 30%, transparent 70%);
+    z-index: 0;
+    animation: orbitalFloat 25s ease-in-out infinite reverse;
+    filter: blur(3px);
+    pointer-events: none;
+    opacity: 0.2;
+  }
+
+  @keyframes orbitalFloat {
+    0%,
+    100% {
+      transform: translate(0px, 0px) rotate(0deg) scale(1);
+    }
+    25% {
+      transform: translate(40px, -60px) rotate(90deg) scale(1.1);
+    }
+    50% {
+      transform: translate(-30px, -40px) rotate(180deg) scale(0.9);
+    }
+    75% {
+      transform: translate(-60px, 40px) rotate(270deg) scale(1.05);
+    }
   }
 
   h1,
   h2,
   h3,
-  h4 {
-    margin-bottom: 0.5rem;
-    line-height: 1;
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--color-base-content);
+  }
+
+  p {
+    margin: 0.75rem 0;
+    color: var(--color-base-content);
   }
 }
 
-:root,
-[data-theme] {
-  background: var(--color-base-200);
+/* Lightweight Button Styles */
+.btn {
+  @apply font-medium transition-colors duration-200 border-0;
+  box-shadow: var(--shadow-light);
+  text-transform: none;
+  border-radius: var(--radius-field);
 }
 
-.btn {
-  @apply shadow-md;
+.btn:hover {
+  box-shadow: var(--shadow-card);
 }
 
 .btn.btn-ghost {
-  @apply shadow-none;
+  @apply shadow-none bg-transparent;
 }
 
+/* Simple Card Styles */
+.card {
+  @apply bg-base-100/80 backdrop-blur-sm border border-base-300/50;
+  box-shadow: var(--shadow-light);
+  border-radius: var(--radius-card);
+}
+
+/* Clean Input Styles */
+.input,
+.select,
+.textarea {
+  @apply border-base-300 bg-base-100/50 backdrop-blur-sm focus:border-primary;
+  border-radius: var(--radius-field);
+  transition: border-color 0.2s ease;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(139 92 246 / 0.1);
+}
+
+/* Simple Link Styles */
 .link {
-  text-underline-offset: 2px;
+  @apply text-primary hover:text-primary/80 transition-colors duration-200;
+  text-decoration: none;
 }
 
 .link:hover {
-  opacity: 80%;
+  text-decoration: underline;
+}
+
+/* Lightweight Form Sections */
+.form-section {
+  @apply bg-base-100/60 backdrop-blur-sm p-6 rounded-xl border border-base-300/50;
+  box-shadow: var(--shadow-light);
+}
+
+/* Simple Stats Cards */
+.stat-card {
+  @apply bg-base-100/60 backdrop-blur-sm p-6 rounded-xl border border-base-300/50 text-center;
+  box-shadow: var(--shadow-light);
+  transition: transform 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.stat-card:hover {
+  transform: translateY(-1px);
+}
+
+/* Ensure all content is above orbs */
+main,
+header,
+footer,
+.container {
+  position: relative;
+  z-index: 1;
 }
