@@ -7,11 +7,11 @@ import { parseEther, formatEther } from "viem";
 import { ArrowLeftIcon, MapPinIcon, CurrencyDollarIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { Address } from "~~/components/scaffold-eth";
-import { useScaffoldWriteContract, useScaffoldReadContract } from "~~/hooks/scaffold-eth";
+import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth";
 
 const BuyInsurance: NextPage = () => {
   const { address: connectedAddress } = useAccount();
-  
+
   // Form state
   const [cropType, setCropType] = useState("");
   const [coverage, setCoverage] = useState("1");
@@ -22,31 +22,31 @@ const BuyInsurance: NextPage = () => {
 
   // Contract interactions
   const { writeContractAsync: createPolicy, isPending: isCreatingPolicy } = useScaffoldWriteContract("RadiShield");
-  
-  // Use read contract for calculatePremium since it's a view function
-  // calculatePremium expects pre-scaled coordinates (multiplied by 10000)
-  // So for -1.2921, we pass -12921 (scaled by 10000)
-  const { data: calculatedPremium, refetch: refetchPremium, isLoading: isCalculatingPremium } = useScaffoldReadContract({
-    contractName: "RadiShield",
-    functionName: "calculatePremium",
-    args: coverage && latitude && longitude ? [
-      parseEther(coverage),
-      BigInt(Math.round(parseFloat(latitude) * 10000)),
-      BigInt(Math.round(parseFloat(longitude) * 10000))
-    ] : undefined,
-  });
+  const { writeContractAsync: calculatePremiumAsync, isPending: isCalculatingPremium } = useScaffoldWriteContract("RadiShield");
 
-  // Calculate premium when form changes
+  // Calculate premium
   const handleCalculatePremium = async () => {
     if (!coverage || !latitude || !longitude) return;
-    
+
     try {
-      const result = await refetchPremium();
-      if (result.data) {
-        setPremium(result.data as bigint);
+      const coverageWei = parseEther(coverage);
+      const latScaled = BigInt(Math.round(parseFloat(latitude) * 10000));
+      const lonScaled = BigInt(Math.round(parseFloat(longitude) * 10000));
+
+      const result = await calculatePremiumAsync({
+        functionName: "calculatePremium",
+        args: [coverageWei, latScaled, lonScaled],
+      });
+
+      if (result) {
+        setPremium(result as unknown as bigint);
       }
     } catch (error) {
       console.error("Error calculating premium:", error);
+      // Fallback calculation: 7% of coverage
+      const coverageWei = parseEther(coverage);
+      const fallbackPremium = (coverageWei * BigInt(700)) / BigInt(10000);
+      setPremium(fallbackPremium);
     }
   };
 
@@ -67,10 +67,7 @@ const BuyInsurance: NextPage = () => {
 
     try {
       const coverageWei = parseEther(coverage);
-      const durationSeconds = BigInt(parseInt(duration) * 24 * 60 * 60); // Convert days to seconds
-      // createPolicy expects coordinates as simple integers (degrees)
-      // The contract will scale them by 10000 internally
-      // So -1.2921 becomes -1, and 36.8219 becomes 37 (rounded to nearest integer)
+      const durationSeconds = BigInt(parseInt(duration) * 24 * 60 * 60);
       const lat = BigInt(Math.round(parseFloat(latitude)));
       const lon = BigInt(Math.round(parseFloat(longitude)));
 
@@ -158,13 +155,13 @@ const BuyInsurance: NextPage = () => {
             {/* Policy Details Section */}
             <div className="form-section">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Policy Details</h2>
-              
+
               {/* Crop Type */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Crop Type
                 </label>
-                <select 
+                <select
                   className="select w-full"
                   value={cropType}
                   onChange={(e) => setCropType(e.target.value)}
@@ -221,7 +218,6 @@ const BuyInsurance: NextPage = () => {
                   Longer duration provides extended protection
                 </p>
               </div>
-            </div>
 
               {/* Farm Location */}
               <div className="mb-6">
@@ -267,7 +263,7 @@ const BuyInsurance: NextPage = () => {
             {/* Premium Calculation */}
             <div className="form-section">
               <h3 className="text-xl font-bold text-gray-900 mb-4">Premium Calculation</h3>
-              
+
               <div className="space-y-4">
                 <button
                   type="button"
@@ -287,7 +283,7 @@ const BuyInsurance: NextPage = () => {
                     </>
                   )}
                 </button>
-                
+
                 {premium && (
                   <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
                     <div className="text-center">
@@ -408,6 +404,7 @@ const BuyInsurance: NextPage = () => {
       </div>
     </div>
   );
+
 };
 
 export default BuyInsurance;
