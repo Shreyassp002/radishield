@@ -10,6 +10,7 @@ require("dotenv").config()
 const { networkConfig } = require("./helper-hardhat-config")
 
 const POLYGON_AMOY_RPC_URL = process.env.POLYGON_AMOY_RPC_URL
+const FLARE_TESTNET_RPC_URL = process.env.FLARE_TESTNET_RPC_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY
 
@@ -40,9 +41,15 @@ module.exports = {
         },
         polygonAmoy: {
             url: POLYGON_AMOY_RPC_URL,
-            accounts: [PRIVATE_KEY], 
+            accounts: [PRIVATE_KEY],
             chainId: 80002,
             blockConfirmations: 6,
+        },
+        flareTestnet: {
+            url: FLARE_TESTNET_RPC_URL,
+            accounts: [PRIVATE_KEY],
+            chainId: 114,
+            blockConfirmations: 3,
         },
     },
 
@@ -60,6 +67,7 @@ module.exports = {
     etherscan: {
         apiKey: {
             polygonAmoy: ETHERSCAN_API_KEY,
+            flareTestnet: "abc", // Flare doesn't require API key for verification
         },
         customChains: [
             {
@@ -68,6 +76,14 @@ module.exports = {
                 urls: {
                     apiURL: "https://api-amoy.polygonscan.com/api",
                     browserURL: "https://amoy.polygonscan.com",
+                },
+            },
+            {
+                network: "flareTestnet",
+                chainId: 114,
+                urls: {
+                    apiURL: "https://coston2.testnet.flarescan.com/api",
+                    browserURL: "https://coston2.testnet.flarescan.com",
                 },
             },
         ],

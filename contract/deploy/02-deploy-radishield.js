@@ -8,7 +8,7 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
     const chainId = network.config.chainId
 
     log("----------------------------------------------------")
-    log("Deploying RadiShield with native POL support...")
+    log("Deploying RadiShield with native token support...")
 
     // Get the deployed WeatherOracle contract
     const weatherOracle = await get("WeatherOracle")

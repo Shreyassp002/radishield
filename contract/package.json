@@ -5,6 +5,8 @@
         "compile": "hardhat compile",
         "test": "hardhat test",
         "deploy": "hardhat deploy",
+        "deploy:flare": "hardhat deploy --network flareTestnet --tags flare",
+        "deploy:polygon": "hardhat deploy --network polygonAmoy",
         "size": "hardhat size-contracts",
         "coverage": "hardhat coverage",
         "lint": "solhint 'contracts/**/*.sol'",
