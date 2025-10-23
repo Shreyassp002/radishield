@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { NextPage } from "next";
 import { useAccount } from "wagmi";
-import { CloudIcon, ShieldCheckIcon, CurrencyDollarIcon, MapPinIcon } from "@heroicons/react/24/outline";
+import { ShieldCheckIcon, CurrencyDollarIcon, MapPinIcon } from "@heroicons/react/24/outline";
 import { Address } from "~~/components/scaffold-eth";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth";
 
@@ -82,7 +82,7 @@ const Home: NextPage = () => {
             </p>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {/* Buy Insurance Card */}
             <div className="card p-8 text-center h-full flex flex-col">
               <div className="bg-primary/10 p-4 rounded-2xl w-fit mx-auto mb-6">
@@ -108,20 +108,6 @@ const Home: NextPage = () => {
               </p>
               <Link href="/my-policies" className="btn btn-primary w-full">
                 View Policies
-              </Link>
-            </div>
-
-            {/* Weather Monitor Card */}
-            <div className="card p-8 text-center h-full flex flex-col">
-              <div className="bg-primary/10 p-4 rounded-2xl w-fit mx-auto mb-6">
-                <CloudIcon className="h-12 w-12 text-primary" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Weather Monitor</h3>
-              <p className="text-gray-600 mb-8 flex-grow">
-                Real-time weather data for your farm
-              </p>
-              <Link href="/weather" className="btn btn-primary w-full">
-                Check Weather
               </Link>
             </div>
           </div>
@@ -167,7 +153,7 @@ const Home: NextPage = () => {
             
             <div className="text-center">
               <div className="bg-primary/10 p-6 rounded-2xl w-fit mx-auto mb-6">
-                <CloudIcon className="h-16 w-16 text-primary" />
+                <CurrencyDollarIcon className="h-16 w-16 text-primary" />
               </div>
               <div className="bg-primary text-white text-sm font-bold px-4 py-2 rounded-full w-fit mx-auto mb-4">
                 STEP 3

@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useRef } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon, ShieldCheckIcon, CurrencyDollarIcon, CloudIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon, ShieldCheckIcon, CurrencyDollarIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 
@@ -30,16 +29,6 @@ export const menuLinks: HeaderMenuLink[] = [
     href: "/my-policies",
     icon: <CurrencyDollarIcon className="h-4 w-4" />,
   },
-  {
-    label: "Weather",
-    href: "/weather",
-    icon: <CloudIcon className="h-4 w-4" />,
-  },
-  {
-    label: "Debug Contracts",
-    href: "/debug",
-    icon: <BugAntIcon className="h-4 w-4" />,
-  },
 ];
 
 export const HeaderMenuLinks = () => {
@@ -54,9 +43,7 @@ export const HeaderMenuLinks = () => {
             <Link
               href={href}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
-                isActive 
-                  ? "bg-primary text-white" 
-                  : "text-gray-700 hover:bg-primary/10 hover:text-primary"
+                isActive ? "bg-primary text-white" : "text-gray-700 hover:bg-primary/10 hover:text-primary"
               }`}
             >
               {icon}

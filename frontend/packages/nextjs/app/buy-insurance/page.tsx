@@ -223,50 +223,42 @@ const BuyInsurance: NextPage = () => {
               </div>
             </div>
 
-            {/* Location Section */}
-            <div className="form-section">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Farm Location</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Coverage is available for farms located within Africa (Lat: -35° to 37°, Lon: -18° to 52°)
-              </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Latitude
-                  </label>
+              {/* Farm Location */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Farm Location
+                  <span className="text-gray-500 font-normal ml-2">(Africa only: Lat -35° to 37°, Lon -18° to 52°)</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                   <input
                     type="number"
                     step="0.000001"
                     className="input w-full"
                     value={latitude}
                     onChange={(e) => setLatitude(e.target.value)}
-                    placeholder="e.g., -1.292 (Nairobi)"
+                    placeholder="Latitude (e.g., -1.292)"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Longitude
-                  </label>
                   <input
                     type="number"
                     step="0.000001"
                     className="input w-full"
                     value={longitude}
                     onChange={(e) => setLongitude(e.target.value)}
-                    placeholder="e.g., 36.822 (Nairobi)"
+                    placeholder="Longitude (e.g., 36.822)"
                   />
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={handleGetLocation}
+                >
+                  <MapPinIcon className="h-4 w-4 mr-2" />
+                  Use My Location
+                </button>
+                <p className="text-sm text-gray-500 mt-1">
+                  Enter your farm coordinates for accurate weather monitoring
+                </p>
               </div>
-              
-              <button 
-                type="button" 
-                className="btn btn-outline w-full sm:w-auto"
-                onClick={handleGetLocation}
-              >
-                <MapPinIcon className="h-4 w-4 mr-2" />
-                Use My Current Location
-              </button>
             </div>
           </div>
 

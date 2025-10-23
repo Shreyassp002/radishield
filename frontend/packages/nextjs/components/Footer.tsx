@@ -44,7 +44,9 @@ export const Footer = () => {
 
             {/* Network Info */}
             <div className="flex items-center gap-4 text-sm text-gray-500">
-              <span>Network: <span className="text-primary font-medium">{targetNetwork.name}</span></span>
+              <span>
+                Network: <span className="text-primary font-medium">{targetNetwork.name}</span>
+              </span>
               {nativeCurrencyPrice > 0 && (
                 <div className="flex items-center gap-1">
                   <CurrencyDollarIcon className="h-4 w-4" />
