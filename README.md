@@ -96,6 +96,88 @@ sequenceDiagram
     end
 ```
 
+### Data Flow Architecture
+
+#### 1. Policy Creation Flow
+
+```mermaid
+flowchart LR
+    subgraph "Frontend"
+        A[Farmer Input<br/>• Crop Type<br/>• Coverage Amount<br/>• Duration<br/>• GPS Coordinates]
+        B[Form Validation<br/>• Range Checks<br/>• Africa Bounds<br/>• Premium Calc]
+    end
+
+    subgraph "Wallet"
+        C[MetaMask<br/>• Sign Transaction<br/>• Pay Premium<br/>• Gas Fees]
+    end
+
+    subgraph "Blockchain"
+        D[RadiShield Contract<br/>• Validate Parameters<br/>• Store Policy<br/>• Emit Events]
+        E[Flare Network<br/>• Transaction Mining<br/>• Event Logs<br/>• State Updates]
+    end
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+```
+
+#### 2. Weather Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "External APIs"
+        A[Open-Meteo API]
+        B[WeatherAPI.com]
+    end
+
+    subgraph "Weather Bot"
+        C[Data Fetcher]
+        D[Data Validator]
+        E[Web3 Client]
+    end
+
+    subgraph "Smart Contracts"
+        F[WeatherOracle]
+        G[RadiShield]
+    end
+
+    A --> C
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+```
+
+#### 3. Claim Processing Flow
+
+```mermaid
+flowchart LR
+    subgraph "Weather Triggers"
+        A[Severe Drought<br/>&lt; 5mm in 30 days<br/>100% Payout]
+        B[Severe Flood<br/>&gt; 200mm in 24h<br/>100% Payout]
+        C[Extreme Heat<br/>&gt; 55°C temp<br/>75% Payout]
+    end
+
+    subgraph "Contract Logic"
+        D[Trigger Evaluation<br/>• Compare Thresholds<br/>• Validate Policy<br/>• Check Active Status]
+        E[Payout Calculation<br/>• Coverage Amount<br/>• Trigger Percentage<br/>• Balance Check]
+    end
+
+    subgraph "Fund Transfer"
+        F[C2FLR Transfer<br/>• Smart Contract<br/>• Automatic Execution<br/>• Event Emission]
+        G[Farmer Wallet<br/>• Receive Funds<br/>• Updated Balance<br/>• Transaction History]
+    end
+
+    A --> D
+    B --> D
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+```
+
 ## Key Features
 
 ### For Farmers
@@ -151,18 +233,15 @@ sequenceDiagram
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/Shreyassp002/radishield
 cd RadiShield
-
-# Install dependencies for all components
-yarn install
-
-# Start the frontend development server
-cd frontend
-yarn start
-
-# The application will be available at http://localhost:3000
 ```
+
+For detailed setup instructions, check the component-specific documentation:
+
+- [Smart Contracts Setup](./contract/README.md)
+- [Frontend Setup](./frontend/README.md)
+- [Weather Bot Setup](./weather_bot/README.md)
 
 ### Getting Testnet Tokens
 
@@ -218,61 +297,6 @@ For detailed information about each component, see the respective documentation:
 - Data validation and error handling
 - Health monitoring and API endpoints
 
-## Development
-
-### Local Development Setup
-
-```bash
-# Start local blockchain
-cd frontend
-yarn chain
-
-# Deploy contracts locally
-yarn deploy
-
-# Start frontend with local contracts
-yarn start
-```
-
-### Testing
-
-```bash
-# Run smart contract tests
-cd contract
-npm test
-
-# Run frontend tests
-cd frontend
-yarn test
-
-# Run weather bot tests
-cd weather_bot
-npm test
-```
-
-## Security
-
-### Smart Contract Security
-
-- ReentrancyGuard protection
-- Access control with owner-only functions
-- Comprehensive input validation
-- Emergency pause/unpause functionality
-
-### Weather Data Security
-
-- Multi-source API validation
-- Data sanitization and range checks
-- Oracle authorization system
-- Timestamp validation for freshness
-
-### Frontend Security
-
-- Secure wallet connections
-- Transaction validation and simulation
-- Network verification
-- Comprehensive error handling
-
 ## Geographic Coverage
 
 **Supported Regions**: Africa only
@@ -282,29 +306,6 @@ npm test
 - **Coordinate System**: Decimal degrees with 6 decimal precision
 - **Validation**: Real-time coordinate validation
 
-## Performance Metrics
-
-### Smart Contract Efficiency
-
-- Policy Creation: ~200,000 gas
-- Weather Data Update: ~100,000 gas
-- Payout Processing: ~80,000 gas
-
-### Weather Bot Performance
-
-- API Response Time: <2 seconds average
-- Data Validation: <500ms processing
-- Blockchain Updates: <30 seconds confirmation
-- Uptime: 99.9% availability target
-
-## Contributing
-
-We welcome contributions from developers, farmers, and agricultural experts. Please see individual component documentation for specific contribution guidelines.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## Support
 
 ### Documentation
@@ -312,11 +313,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Smart Contracts Documentation](./contract/README.md)
 - [Frontend Documentation](./frontend/README.md)
 - [Weather Bot Documentation](./weather_bot/README.md)
-
-### Community
-
-- **GitHub Issues**: Bug reports and feature requests
-- **Discussions**: Community discussions and support
 
 ---
 
