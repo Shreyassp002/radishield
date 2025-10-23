@@ -238,10 +238,9 @@ cd RadiShield
 ```
 
 For detailed setup instructions, check the component-specific documentation:
-
 - [Smart Contracts Setup](./contract/README.md)
 - [Frontend Setup](./frontend/README.md)
-- [Weather Bot Setup](./weather_bot/README.md)
+- [Weather Bot Setup](./weath
 
 ### Getting Testnet Tokens
 
@@ -305,6 +304,7 @@ For detailed information about each component, see the respective documentation:
 - **Longitude**: -18° to 52°
 - **Coordinate System**: Decimal degrees with 6 decimal precision
 - **Validation**: Real-time coordinate validation
+
 
 ## Support
 
