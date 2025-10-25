@@ -196,7 +196,7 @@ const PolicyCard = ({
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold text-primary">
-            {formatEther(policyData.coverage)} POL
+            {formatEther(policyData.coverage)} C2FLR
           </div>
           <div className="text-sm text-base-content/70">Coverage</div>
         </div>
@@ -209,7 +209,7 @@ const PolicyCard = ({
         </div>
         <div>
           <div className="text-sm text-base-content/70">Premium Paid</div>
-          <div className="font-medium">{formatEther(policyData.premium)} POL</div>
+          <div className="font-medium">{formatEther(policyData.premium)} C2FLR</div>
         </div>
         <div>
           <div className="text-sm text-base-content/70">Location</div>
